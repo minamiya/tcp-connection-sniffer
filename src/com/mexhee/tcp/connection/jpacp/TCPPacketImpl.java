@@ -1,6 +1,7 @@
 package com.mexhee.tcp.connection.jpacp;
 
 import java.net.InetAddress;
+import java.util.Date;
 
 import com.mexhee.tcp.packet.TCPPacket;
 
@@ -70,5 +71,10 @@ public class TCPPacketImpl extends TCPPacket {
 	@Override
 	public boolean isFinish() {
 		return packet.fin;
+	}
+
+	@Override
+	public Date getPacketCaptureTime() {
+		return new Date(packet.sec);
 	}
 }

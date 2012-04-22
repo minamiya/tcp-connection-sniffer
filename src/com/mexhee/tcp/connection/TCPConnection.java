@@ -4,7 +4,7 @@ import java.io.IOException;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
-import com.mexhee.io.CombinedInputStream;
+import com.mexhee.io.TimeMeasurableCombinedInputStream;
 import com.mexhee.io.DynamicByteArrayInputStream;
 import com.mexhee.tcp.connection.configuration.PacketListener;
 import com.mexhee.tcp.connection.configuration.TCPConnectionStateListener;
@@ -55,36 +55,36 @@ public class TCPConnection {
 	}
 
 	/**
-	 * get a {@link CombinedInputStream} instance, from this stream, we could
+	 * get a {@link TimeMeasurableCombinedInputStream} instance, from this stream, we could
 	 * get all the data that server received through this tcp connection. If the
 	 * server side finished the reading, and try to write data into tcp
-	 * connection, then the {@link CombinedInputStream} will be marked EOF of
+	 * connection, then the {@link TimeMeasurableCombinedInputStream} will be marked EOF of
 	 * last stream, and preparing for the next new input stream, at this case,
 	 * whenever server side received a new set of data, then this new data will
-	 * be included in the next stream. The {@link CombinedInputStream} will be
+	 * be included in the next stream. The {@link TimeMeasurableCombinedInputStream} will be
 	 * finished when detected server side sent fin packet to client side.
 	 * 
-	 * @see CombinedInputStream
+	 * @see TimeMeasurableCombinedInputStream
 	 * @return CombinedInputStream
 	 */
-	public CombinedInputStream getServerInputStream() {
+	public TimeMeasurableCombinedInputStream getServerInputStream() {
 		return this.serverInputStream;
 	}
 
 	/**
-	 * get a {@link CombinedInputStream} instance, from this stream, we could
+	 * get a {@link TimeMeasurableCombinedInputStream} instance, from this stream, we could
 	 * get all the data that client received through this tcp connection. If the
 	 * client side finished the reading, and try to write data into tcp
-	 * connection, then the {@link CombinedInputStream} will be marked EOF of
+	 * connection, then the {@link TimeMeasurableCombinedInputStream} will be marked EOF of
 	 * last stream, and preparing for the next new input stream, at this case,
 	 * whenever client side received a new set of data, then this new data will
-	 * be included in the next stream. The {@link CombinedInputStream} will be
+	 * be included in the next stream. The {@link TimeMeasurableCombinedInputStream} will be
 	 * finished when detected client side sent fin packet to server side.
 	 * 
 	 * @return CombinedInputStream
 	 */
 
-	public CombinedInputStream getClientInputStream() {
+	public TimeMeasurableCombinedInputStream getClientInputStream() {
 		return this.clientInputStream;
 	}
 
@@ -217,12 +217,14 @@ public class TCPConnection {
 				canConsumePacket = true;
 				if (latestEvent == null) {
 					latestEvent = StreamEvent.createClientWritingEvent(this);
+					clientInputStream.markStreamStartTime(dataPacket.getPacketCaptureTime());
 					fireEvent();
 				} else if (!latestEvent.isClientWriting()) {
 					if (latestEvent.isServerWriting()) {
 						serverInputStream.finish(true);
 					}
 					latestEvent = StreamEvent.createClientWritingEvent(this);
+					clientInputStream.markStreamStartTime(dataPacket.getPacketCaptureTime());
 					fireEvent();
 				}
 				clientInputStream.append(dataPacket.getData());
@@ -232,12 +234,14 @@ public class TCPConnection {
 				canConsumePacket = true;
 				if (latestEvent == null) {
 					latestEvent = StreamEvent.createServerWritingEvent(this);
+					serverInputStream.markStreamStartTime(dataPacket.getPacketCaptureTime());
 					fireEvent();
 				} else if (!latestEvent.isServerWriting()) {
 					if (latestEvent.isClientWriting()) {
 						clientInputStream.finish(true);
 					}
 					latestEvent = StreamEvent.createServerWritingEvent(this);
+					serverInputStream.markStreamStartTime(dataPacket.getPacketCaptureTime());
 					fireEvent();
 				}
 				serverInputStream.append(dataPacket.getData());

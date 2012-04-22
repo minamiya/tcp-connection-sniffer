@@ -1,6 +1,7 @@
 package com.mexhee.io;
 
 import java.io.IOException;
+import java.util.Date;
 
 import org.junit.After;
 import org.junit.Assert;
@@ -26,7 +27,7 @@ public class DynamicByteArrayInputStreamTest {
 		DynamicByteArrayInputStream stream = new DynamicByteArrayInputStream();
 		stream.finish(false);
 		stream.read();
-		stream = new DynamicByteArrayInputStream(new byte[0]);
+		stream = new DynamicByteArrayInputStream(new byte[0], new Date());
 		stream.finish(false);
 		stream.read();
 	}
@@ -71,7 +72,7 @@ public class DynamicByteArrayInputStreamTest {
 
 	@Test
 	public void testSetFinishFlagWillFinishStreamAutomatically() throws Exception {
-		CombinedInputStream stream = createInputStreamWithFinishedFlag();
+		TimeMeasurableCombinedInputStream stream = createInputStreamWithFinishedFlag();
 		while (stream.hasMoreInputStream()) {
 			byte[] buffer = new byte[10];
 			int size = 0;
@@ -96,7 +97,7 @@ public class DynamicByteArrayInputStreamTest {
 		Assert.assertEquals("HelloWorld!!", sb.toString());
 	}
 
-	private void printContent(String content, CombinedInputStream stream) throws IOException {
+	private void printContent(String content, TimeMeasurableCombinedInputStream stream) throws IOException {
 		byte[] buf = new byte[100];
 		int len = stream.read(buf);
 		if (len != content.length()) {

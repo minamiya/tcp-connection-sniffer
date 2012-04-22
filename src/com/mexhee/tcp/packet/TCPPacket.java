@@ -1,6 +1,7 @@
 package com.mexhee.tcp.packet;
 
 import java.net.InetAddress;
+import java.util.Date;
 
 import com.mexhee.tcp.connection.ConnectionDetail;
 
@@ -55,6 +56,8 @@ public abstract class TCPPacket {
 		}
 		return connectionDetail;
 	}
+	
+	public abstract Date getPacketCaptureTime();
 
 	@Override
 	public String toString() {

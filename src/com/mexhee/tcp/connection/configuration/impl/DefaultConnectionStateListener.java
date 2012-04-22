@@ -6,7 +6,7 @@ import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 
-import com.mexhee.io.CombinedInputStream;
+import com.mexhee.io.TimeMeasurableCombinedInputStream;
 import com.mexhee.tcp.connection.TCPConnection;
 import com.mexhee.tcp.connection.configuration.TCPConnectionStateListener;
 
@@ -35,8 +35,8 @@ public class DefaultConnectionStateListener implements TCPConnectionStateListene
 		Runnable handler = new Runnable() {
 			@Override
 			public void run() {
-				CombinedInputStream clientInputStream = connection.getClientInputStream();
-				CombinedInputStream serverInputStream = connection.getServerInputStream();
+				TimeMeasurableCombinedInputStream clientInputStream = connection.getClientInputStream();
+				TimeMeasurableCombinedInputStream serverInputStream = connection.getServerInputStream();
 				while (clientInputStream.hasMoreInputStream() || serverInputStream.hasMoreInputStream()) {
 					output(clientInputStream);
 					output(serverInputStream);

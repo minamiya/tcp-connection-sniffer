@@ -2,11 +2,12 @@ package com.mexhee.io;
 
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Date;
 import java.util.List;
 
 /**
  * Use byte array to store temporary data, it supports appending data into
- * stream dynamically, also support mark stream EOF, and beginning to generate
+ * stream dynamically, also supports mark stream EOF, and beginning to generate
  * next new input stream.
  * 
  * A sample:
@@ -30,18 +31,24 @@ import java.util.List;
  * </pre>
  * 
  */
-public class DynamicByteArrayInputStream extends CombinedInputStream {
+public class DynamicByteArrayInputStream extends
+		TimeMeasurableCombinedInputStream {
 
 	private byte[] buf;
+	// current stream cursor position
 	private int pos = 0;
+	// current stream length
 	private int count = 0;
+	// total buffer size
 	private int bufferSize = 0;
 	private boolean isFinished = false;
 	private boolean blocking = true;
 
-	private List<Integer> newInputStreamMarks = new ArrayList<Integer>();
+	private Date currentStreamStartTime = new Date();
 
-	private final static int READ_TIMEOUT = 20000;
+	private List<StreamMark> newInputStreamMarks = new ArrayList<StreamMark>();
+
+	private final static int READ_TIMEOUT = 200000;
 	private final static int MAX_BUFFER_SIZE = 200 * 1024;
 
 	/**
@@ -50,21 +57,36 @@ public class DynamicByteArrayInputStream extends CombinedInputStream {
 	 * @param buff
 	 *            create a new stream, and add those data in buff into current
 	 *            stream
+	 * @param startTime
+	 *            the first stream start time
 	 */
-	public DynamicByteArrayInputStream(byte[] buff) {
+	public DynamicByteArrayInputStream(byte[] buff, Date startTime) {
 		this.buf = buff;
 		this.count = this.bufferSize = buff.length;
+		this.currentStreamStartTime = startTime;
 	}
 
+	/**
+	 * initialize instance
+	 * 
+	 * @param startTime
+	 *            the first stream start time
+	 */
+	public DynamicByteArrayInputStream(Date startTime) {
+		this.currentStreamStartTime = startTime;
+	}
+
+	/**
+	 * initialize instance
+	 * 
+	 */
 	public DynamicByteArrayInputStream() {
 	}
 
-	private void addMarkPos() {
-		if (newInputStreamMarks.size() == 0) {
-			this.count = this.bufferSize;
-		}
+	private void addMarkPos(Date endTime) {
 		if (bufferSize > 0) {
-			newInputStreamMarks.add(this.bufferSize);
+			newInputStreamMarks.add(new StreamMark(currentStreamStartTime,
+					endTime, bufferSize));
 		}
 	}
 
@@ -80,15 +102,26 @@ public class DynamicByteArrayInputStream extends CombinedInputStream {
 	 *            this object, set stream into finish state, and cannot append
 	 *            new data any more, if using {@link #append(byte[])} to add a
 	 *            new data, AlreadyFinishedStreamException will be thrown.
+	 * @param endTime
+	 *            the marking end stream end time.
 	 */
-	public synchronized void finish(boolean markFinish) {
-		addMarkPos();
+	public synchronized void finish(boolean markFinish, Date endTime) {
+		addMarkPos(endTime);
 		if (!markFinish) {
 			this.isFinished = true;
 		}
 		if (blocking) {
 			this.notifyAll();
 		}
+	}
+
+	/**
+	 * Use current date time as the marking end stream's end time.
+	 * 
+	 * @see #finish(boolean, Date)
+	 */
+	public synchronized void finish(boolean markFinish) {
+		finish(markFinish, new Date());
 	}
 
 	/**
@@ -144,15 +177,24 @@ public class DynamicByteArrayInputStream extends CombinedInputStream {
 	 *             if {@link #isFinished} is true BufferFullException if adding
 	 *             this data into buffer will exceed {@link #capacity()} size
 	 */
-	public synchronized void append(byte[] newBytes) throws AlreadyFinishedStreamException, BufferFullException {
+	public synchronized void append(byte[] newBytes)
+			throws AlreadyFinishedStreamException, BufferFullException {
 		if (isFinished) {
-			throw new AlreadyFinishedStreamException("stream is already finished!");
+			throw new AlreadyFinishedStreamException(
+					"stream is already finished!");
 		}
 		int available = this.bufferSize - this.pos;
 		int newSize = available + newBytes.length;
 		if (newSize > MAX_BUFFER_SIZE) {
-			throw new BufferFullException(this.toString() + " is full, capacity is " + (MAX_BUFFER_SIZE / 1024) + "k");
+			throw new BufferFullException(this.toString()
+					+ " is full, capacity is " + (MAX_BUFFER_SIZE / 1024) + "k");
 		}
+		/*
+		 * removed pos bytes data, so the count and newInputStreamMarks should
+		 * be minus those pos, and the new value should be greater than 0
+		 */
+		this.count -= this.pos;
+		moveForwardMarks(pos);
 		if (available > 0) {
 			byte[] b = new byte[newSize];
 			System.arraycopy(buf, pos, b, 0, available);
@@ -171,8 +213,21 @@ public class DynamicByteArrayInputStream extends CombinedInputStream {
 		this.notifyAll();
 	}
 
+	private void moveForwardMarks(int pos) {
+		for (int i = 0; i < newInputStreamMarks.size(); i++) {
+			newInputStreamMarks.set(i, newInputStreamMarks.get(i)
+					.moveEndPosForward(pos));
+		}
+		if (!newInputStreamMarks.isEmpty()
+				&& newInputStreamMarks.get(newInputStreamMarks.size() - 1)
+						.getEndPos() > this.bufferSize) {
+			throw new IndexOutOfBoundsException();
+		}
+	}
+
 	private boolean isCurrentStreamFinished() {
-		if (newInputStreamMarks.size() > 0 && this.pos >= newInputStreamMarks.get(0)) {
+		if (newInputStreamMarks.size() > 0
+				&& this.pos >= newInputStreamMarks.get(0).getEndPos()) {
 			shrinkToNextInputStream();
 			return true;
 		}
@@ -208,7 +263,7 @@ public class DynamicByteArrayInputStream extends CombinedInputStream {
 	}
 
 	@Override
-	public boolean hasMoreInputStream() {
+	public synchronized boolean hasMoreInputStream() {
 		return this.newInputStreamMarks.size() > 0 || !isFinished();
 	}
 
@@ -225,16 +280,10 @@ public class DynamicByteArrayInputStream extends CombinedInputStream {
 		this.buf = null;
 		this.buf = b;
 		this.bufferSize = this.buf.length;
-		List<Integer> newMarkPos = new ArrayList<Integer>(newInputStreamMarks.size() - 1);
-		for (Integer m : newInputStreamMarks) {
-			int p = m - this.pos;
-			if (p > 0) {
-				newMarkPos.add(p);
-			}
-		}
-		this.newInputStreamMarks = null;
-		this.newInputStreamMarks = newMarkPos;
-		this.count = this.newInputStreamMarks.size() > 0 ? this.newInputStreamMarks.get(0) : this.bufferSize;
+		newInputStreamMarks.remove(0);
+		moveForwardMarks(pos);
+		this.count = this.newInputStreamMarks.size() > 0 ? this.newInputStreamMarks
+				.get(0).getEndPos() : this.bufferSize;
 		this.pos = 0;
 	}
 
@@ -247,7 +296,8 @@ public class DynamicByteArrayInputStream extends CombinedInputStream {
 	public synchronized int read(byte b[], int off, int len) {
 		if (b == null) {
 			throw new NullPointerException();
-		} else if ((off < 0) || (off > b.length) || (len < 0) || ((off + len) > b.length) || ((off + len) < 0)) {
+		} else if ((off < 0) || (off > b.length) || (len < 0)
+				|| ((off + len) > b.length) || ((off + len) < 0)) {
 			throw new IndexOutOfBoundsException();
 		}
 		if (pos >= count) {
@@ -302,4 +352,61 @@ public class DynamicByteArrayInputStream extends CombinedInputStream {
 		return n;
 	}
 
+	public void markStreamStartTime(Date startTime) {
+		this.currentStreamStartTime = startTime;
+	}
+
+	@Override
+	public Date getCurrentInputStreamStartTime() {
+		/*
+		 * if there is a marker, then it means current reading/operating stream
+		 * should be in the marker buffer
+		 */
+		if (newInputStreamMarks.size() > 0) {
+			return newInputStreamMarks.get(0).getStartTime();
+		}
+		return currentStreamStartTime;
+	}
+
+	@Override
+	public Date getCurrentInputStreamEndTime() {
+		if (newInputStreamMarks.size() > 0) {
+			return newInputStreamMarks.get(0).getEndTime();
+		}
+		return null;
+	}
+
+	class StreamMark {
+		private Date startTime;
+		private Date endTime;
+		private int endPos;
+
+		StreamMark(Date startTime, Date endTime, int endPos) {
+			this.startTime = startTime;
+			this.endTime = endTime;
+			this.endPos = endPos;
+		}
+
+		StreamMark moveEndPosForward(int delta) {
+			endPos -= delta;
+			return this;
+		}
+
+		int getEndPos() {
+			return endPos;
+		}
+
+		void markEndPos(int endPos, Date endTime) {
+			this.endPos = endPos;
+			this.endTime = endTime;
+		}
+
+		Date getStartTime() {
+			return startTime;
+		}
+
+		Date getEndTime() {
+			return endTime;
+		}
+	}
 }

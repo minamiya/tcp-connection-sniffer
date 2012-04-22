@@ -4,6 +4,7 @@ import java.net.InetAddress;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.Date;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
@@ -126,5 +127,10 @@ public class MergedTCPPacket extends TCPPacket {
 
 	public Collection<TCPPacket> getMergedPackets() {
 		return packets.values();
+	}
+
+	@Override
+	public Date getPacketCaptureTime() {
+		return earliestPacket.getPacketCaptureTime();
 	}
 }
