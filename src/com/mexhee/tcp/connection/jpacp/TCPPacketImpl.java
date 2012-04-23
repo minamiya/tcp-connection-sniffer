@@ -5,6 +5,9 @@ import java.util.Date;
 
 import com.mexhee.tcp.packet.TCPPacket;
 
+/**
+ * A tcp packet implementation base on jpcap library
+ */
 public class TCPPacketImpl extends TCPPacket {
 
 	private jpcap.packet.TCPPacket packet;

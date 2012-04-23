@@ -13,8 +13,9 @@ import com.mexhee.tcp.connection.configuration.impl.DefaultTCPConnectionConfigur
 
 public class TCPConnectionSniffer {
 
+	private JpcapCaptor captor;
 	public void startup(NetworkInterface networkInterface, TCPConnectionConfiguration configuration) throws IOException {
-		JpcapCaptor captor = JpcapCaptor.openDevice(networkInterface, 2000, false, 10000);
+		captor = JpcapCaptor.openDevice(networkInterface, 2000, false, 10000);
 		captor.setFilter(configuration.getConnectionFilter().toString(), true);
 		final PacketReceiver picker = new PacketReceiverImpl(configuration);
 		captor.loopPacket(0, new jpcap.PacketReceiver() {
@@ -34,6 +35,9 @@ public class TCPConnectionSniffer {
 	}
 
 	public void shutdown() {
+		if(captor != null){
+			captor.breakLoop();
+		}
 	}
 
 	public static NetworkInterface[] allInterfaces() {
