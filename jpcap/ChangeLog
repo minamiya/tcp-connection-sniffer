@@ -1,5 +1,13 @@
 Changes
 
+ver. 0.8 (07/09/07)
+    Mac OS X supported (thanx!>Flavius)
+	RPM and Debian binary package (experimental)
+    JpcapSender can now send IPv6 packet. (But not IPv6Option yet.)
+    JpcapSender.openRawSocket() deprecated. Using JpcapSender.openDevice() is recommended.
+    JpcapCaptor.dispatchPacket() deprecated (because it's same as processPacket())
+    Bug fix: IPv6 routnig option header
+
 ver. 0.7 (07/09/07)
     Mac OS X supported (thanx!>Flavius)
 	RPM and Debian binary package (experimental)
