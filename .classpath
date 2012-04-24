@@ -10,5 +10,6 @@
 	</classpathentry>
 	<classpathentry kind="lib" path="lib/commons-io-2.2.jar"/>
 	<classpathentry kind="lib" path="lib/junit-4.4.jar"/>
+	<classpathentry kind="lib" path="lib/log4j-1.2rc1.jar"/>
 	<classpathentry kind="output" path="bin"/>
 </classpath>

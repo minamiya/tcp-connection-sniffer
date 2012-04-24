@@ -1,8 +1,11 @@
 package com.mexhee.tcp.connection;
 
 import java.io.IOException;
+import java.util.Date;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+
+import org.apache.log4j.Logger;
 
 import com.mexhee.io.TimeMeasurableCombinedInputStream;
 import com.mexhee.io.DynamicByteArrayInputStream;
@@ -18,11 +21,10 @@ import com.mexhee.tcp.packet.TCPPacket;
  * {@link TCPConnectionStateListener#onEstablished(TCPConnection)} to detect a
  * real tcp connection establishing after 3-way handshake.
  * 
- * @author beam.liu@gmail.com
- * 
  */
 public class TCPConnection {
 
+	private static final Logger logger = Logger.getLogger(TCPConnection.class);
 	// used to record the client and server side ip and port in current tcp
 	// connection
 	private ConnectionDetail connectionDetail;
@@ -46,6 +48,7 @@ public class TCPConnection {
 	private DynamicByteArrayInputStream clientInputStream = new DynamicByteArrayInputStream();
 
 	private StreamEvent latestEvent = null;
+	private Date lastUpdated = new Date();
 
 	public TCPConnection(ConnectionDetail connectionDetail, PacketListener packetListener,
 			TCPConnectionStateListener stateListener) {
@@ -55,14 +58,16 @@ public class TCPConnection {
 	}
 
 	/**
-	 * get a {@link TimeMeasurableCombinedInputStream} instance, from this stream, we could
-	 * get all the data that server received through this tcp connection. If the
-	 * server side finished the reading, and try to write data into tcp
-	 * connection, then the {@link TimeMeasurableCombinedInputStream} will be marked EOF of
-	 * last stream, and preparing for the next new input stream, at this case,
+	 * get a {@link TimeMeasurableCombinedInputStream} instance, from this
+	 * stream, we could get all the data that server received through this tcp
+	 * connection. If the server side finished the reading, and try to write
+	 * data into tcp connection, then the
+	 * {@link TimeMeasurableCombinedInputStream} will be marked EOF of last
+	 * stream, and preparing for the next new input stream, at this case,
 	 * whenever server side received a new set of data, then this new data will
-	 * be included in the next stream. The {@link TimeMeasurableCombinedInputStream} will be
-	 * finished when detected server side sent fin packet to client side.
+	 * be included in the next stream. The
+	 * {@link TimeMeasurableCombinedInputStream} will be finished when detected
+	 * server side sent fin packet to client side.
 	 * 
 	 * @see TimeMeasurableCombinedInputStream
 	 * @return CombinedInputStream
@@ -72,14 +77,16 @@ public class TCPConnection {
 	}
 
 	/**
-	 * get a {@link TimeMeasurableCombinedInputStream} instance, from this stream, we could
-	 * get all the data that client received through this tcp connection. If the
-	 * client side finished the reading, and try to write data into tcp
-	 * connection, then the {@link TimeMeasurableCombinedInputStream} will be marked EOF of
-	 * last stream, and preparing for the next new input stream, at this case,
+	 * get a {@link TimeMeasurableCombinedInputStream} instance, from this
+	 * stream, we could get all the data that client received through this tcp
+	 * connection. If the client side finished the reading, and try to write
+	 * data into tcp connection, then the
+	 * {@link TimeMeasurableCombinedInputStream} will be marked EOF of last
+	 * stream, and preparing for the next new input stream, at this case,
 	 * whenever client side received a new set of data, then this new data will
-	 * be included in the next stream. The {@link TimeMeasurableCombinedInputStream} will be
-	 * finished when detected client side sent fin packet to server side.
+	 * be included in the next stream. The
+	 * {@link TimeMeasurableCombinedInputStream} will be finished when detected
+	 * client side sent fin packet to server side.
 	 * 
 	 * @return CombinedInputStream
 	 */
@@ -135,6 +142,7 @@ public class TCPConnection {
 		state = TCPConnectionState.SynSent;
 		stateListener.onSynSent(this);
 		packetListener.consumeTCPPacket(syncPacket);
+		lastUpdated = new Date();
 	}
 
 	/*
@@ -149,6 +157,7 @@ public class TCPConnection {
 		state = TCPConnectionState.SynReceived;
 		stateListener.onSynReceived(this);
 		packetListener.consumeTCPPacket(syncAckPacket);
+		lastUpdated = new Date();
 	}
 
 	protected void processAckPacket(TCPPacket ackPacket) throws IOException {
@@ -167,6 +176,7 @@ public class TCPConnection {
 			stateListener.onClosing(this);
 			break;
 		}
+		lastUpdated = new Date();
 	}
 
 	private void processFinishWait1AckPacket(TCPPacket ackPacket) {
@@ -197,8 +207,10 @@ public class TCPConnection {
 
 	private void processHandshake3AckPacket(TCPPacket ackPacket) {
 		if (ackPacket.getAckNum() != serverCounter.sequence + 1) {
-			throw new RuntimeException("sync packet ack number is incorrect!");
+			throw new RuntimeException("syn packet ack number " + ackPacket.getAckNum() + " is incorrect!");
 		}
+		if (logger.isInfoEnabled())
+			logger.info("new tcp connection detected " + connectionDetail.toString());
 		updateClientCounter(ackPacket);
 		// server seq should be +1
 		serverCounter.sequence++;
@@ -285,6 +297,7 @@ public class TCPConnection {
 		} else {
 			temporaryStoredDataPackets.put(dataPacket.getAckNum(), dataPacket);
 		}
+		lastUpdated = new Date();
 	}
 
 	protected void processFinishPacket(TCPPacket tcpPacket) throws IOException {
@@ -328,6 +341,7 @@ public class TCPConnection {
 			packetListener.discardTCPPacket(tcpPacket);
 		}
 		fireEvent();
+		lastUpdated = new Date();
 	}
 
 	private boolean updateConnectionStateAfterReceivedFinishPacket(TCPPacket tcpPacket, Counter counter) {
@@ -349,6 +363,15 @@ public class TCPConnection {
 		}
 		updateCounter(counter, tcpPacket);
 		return isFirstFinPacket;
+	}
+
+	/**
+	 * get time of last packet transferred through this connection, this time is
+	 * not the packet capture time in kernel, but the time processed by tcp
+	 * connection sniffer
+	 */
+	public Date getLastUpdated() {
+		return this.lastUpdated;
 	}
 
 	/**

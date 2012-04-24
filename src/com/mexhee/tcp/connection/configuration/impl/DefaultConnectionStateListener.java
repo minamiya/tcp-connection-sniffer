@@ -87,4 +87,8 @@ public class DefaultConnectionStateListener implements TCPConnectionStateListene
 	public void onTimeWait(TCPConnection connection) {
 	}
 
+	@Override
+	public void onTimeoutDetected(TCPConnection connection) {
+	}
+
 }

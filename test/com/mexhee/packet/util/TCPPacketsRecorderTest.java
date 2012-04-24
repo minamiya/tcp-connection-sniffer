@@ -2,6 +2,8 @@ package com.mexhee.packet.util;
 
 import java.io.File;
 import java.io.IOException;
+import java.util.ArrayList;
+import java.util.Collection;
 
 import jpcap.JpcapCaptor;
 
@@ -10,6 +12,7 @@ import org.junit.Test;
 
 import com.mexhee.tcp.connection.PacketReceiver;
 import com.mexhee.tcp.connection.PacketReceiverImpl;
+import com.mexhee.tcp.connection.TCPConnection;
 import com.mexhee.tcp.connection.configuration.ConnectionFilter;
 import com.mexhee.tcp.connection.configuration.impl.DefaultConnectionStateListener;
 import com.mexhee.tcp.connection.configuration.impl.DefaultTCPConnectionConfiguration;
@@ -23,7 +26,7 @@ public class TCPPacketsRecorderTest {
 		dumpFolder = new File("test/dump").getAbsolutePath();
 		System.out.println(dumpFolder);
 	}
-	
+
 	public void testDumpFile() throws IOException {
 		ConnectionFilter filter = new ConnectionFilter();
 		filter.addHost("192.168.1.1");
@@ -31,7 +34,6 @@ public class TCPPacketsRecorderTest {
 		recorder.start();
 	}
 
-	
 	public void testRunAppFromDumpFile() throws IOException, ClassNotFoundException {
 		DefaultTCPConnectionConfiguration config = new DefaultTCPConnectionConfiguration();
 		DefaultConnectionStateListener stateListener = new DefaultConnectionStateListener();
@@ -40,7 +42,7 @@ public class TCPPacketsRecorderTest {
 				new PacketReceiverImpl(config));
 		stateListener.getExecutor().shutdown();
 	}
-	
+
 	@Test
 	public void testRunAppFromDumpFolder() throws IOException, ClassNotFoundException {
 		DefaultTCPConnectionConfiguration config = new DefaultTCPConnectionConfiguration();

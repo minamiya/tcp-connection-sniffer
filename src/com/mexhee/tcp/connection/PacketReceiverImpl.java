@@ -1,8 +1,11 @@
 package com.mexhee.tcp.connection;
 
 import java.io.IOException;
+import java.util.Collection;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+
+import org.apache.log4j.Logger;
 
 import com.mexhee.tcp.connection.configuration.PacketListener;
 import com.mexhee.tcp.connection.configuration.TCPConnectionConfiguration;
@@ -12,6 +15,8 @@ import com.mexhee.tcp.packet.TCPPacket;
  * A implementation of {@link PacketReceiver}.
  */
 public class PacketReceiverImpl implements PacketReceiver {
+
+	private static final Logger logger = Logger.getLogger(PacketReceiverImpl.class);
 
 	private Map<ConnectionDetail, TCPConnection> activeConnections = new ConcurrentHashMap<ConnectionDetail, TCPConnection>();
 
@@ -35,12 +40,17 @@ public class PacketReceiverImpl implements PacketReceiver {
 	@Override
 	public void pick(TCPPacket tcpPacket) throws IOException {
 		if (tcpPacket.isHandsShake1Packet()) {
+			if (logger.isDebugEnabled())
+				logger.debug("hands shake 1 packet");
 			ConnectionDetail connectionDetail = tcpPacket.getConnectionDetail();
 			if (configuration.isAcceptable(connectionDetail)) {
 				TCPConnection connection = new TCPConnection(connectionDetail, packetListener,
 						configuration.getConnectionStateListener());
 				activeConnections.put(connectionDetail, connection);
 				connection.processSyncPacket(tcpPacket);
+			} else {
+				if (logger.isInfoEnabled())
+					logger.info("discarded to listen to tcp connection " + connectionDetail.toString());
 			}
 			return;
 		}
@@ -51,6 +61,8 @@ public class PacketReceiverImpl implements PacketReceiver {
 			return;
 		}
 		if (tcpPacket.isHandsShake2Packet()) {
+			if (logger.isDebugEnabled())
+				logger.debug("hands shake 2 packet");
 			connection.processSyncAckPacket(tcpPacket);
 			return;
 		}
@@ -63,5 +75,12 @@ public class PacketReceiverImpl implements PacketReceiver {
 		if (tcpPacket.isFinish()) {
 			connection.processFinishPacket(tcpPacket);
 		}
+	}
+
+	/**
+	 * return all active tcp connections that maintained by this receiver
+	 */
+	public Collection<TCPConnection> getActiveConnections() {
+		return activeConnections.values();
 	}
 }
