@@ -1,7 +1,10 @@
 <?xml version="1.0"?>
-<project name="Jpcap" default="jar">
-	<property name="version" value="0.7"/>
+<project name="Jpcap" default="jar-win">
+	<property name="version" value="0.8"/>
 	<property name="release" value="1"/>
+	<property name="build.base" value="build"/>
+	<property name="build.classes" value="${build.base}/classes"/>
+	<property name="build.dest" value="${build.base}/dest"/>
 	<property name="NSIS" value="C:\Program Files\NSIS\makensis.exe"/>
 	
 	<condition property="IsWindows">
@@ -22,19 +25,29 @@
 		</and>
 	</condition>
 	
-	<target name="compile">
-        <javac
-        	srcdir="src/java"
-      		destdir="bin"
+	<target name="compile" depends="init">
+        <javac srcdir="src/java"
+      		destdir="${build.classes}"
        />
     </target>
 	
-    <target name="jar" depends="compile">
-        <jar
-             jarfile="lib/jpcap.jar"
-             basedir="bin"
-             excludes="*.class"
-        />
+    <target name="jar-win" depends="compile">
+        <jar jarfile="${build.dest}/jpcap_win.jar">
+			 <fileset dir="${build.classes}" 
+               includes="**/*.class"/>
+			<fileset dir="lib"
+               includes="*.dll"/>
+			<manifest>
+			  <attribute name="Jpcap-Version"
+					value="${version}"/>
+			</manifest>
+		</jar>
+    </target>
+
+	<target name="jar" depends="compile">
+        <jar jarfile="${build.dest}/jpcap.jar"
+             basedir="${build.classes}"
+             excludes="*.class"/>
     </target>
 
 	<target name="javadoc">
@@ -62,15 +75,7 @@
 		<delete file="src/c/libjpcap.so"/>
 	</target>
 	
-	<target name="win_installer" depends="jar" if="IsNSISAvailable">
-		<exec dir="src/installer/win32" executable="${NSIS}">
-			<arg line="setup.nsi"/>
-		</exec>
-		<copy file="src/installer/win32/JpcapSetup.exe" tofile="JpcapSetup-${version}.exe" overwrite="true"/>
-		<delete file="src/installer/win32/JpcapSetup.exe"/>
-	</target>
-	
-	<target name="source.zip" depends="win_installer">
+	<target name="source.zip">
     	<copy todir="lib">
  			<fileset file="src/c/win32/Release/Jpcap.dll"/>
     	</copy>
@@ -112,5 +117,11 @@
 			<arg line="--build jpcap-${version}"/>
 		</exec>
 		<delete dir="jpcap-${version}"/>
+	</target>
+
+	<target name="init">
+		<mkdir dir="${build.base}"/>
+		<mkdir dir="${build.classes}"/>
+		<mkdir dir="${build.dest}"/>
 	</target>
 </project>
