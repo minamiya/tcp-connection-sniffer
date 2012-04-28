@@ -1,7 +1,7 @@
 ﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio 11
-Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "Jpcap", "Jpcap.vcxproj", "{A6460536-6DC3-BE86-F706-9C93FBC1368B}"
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "Jpcap", "Jpcap.vcxproj", "{15E46CD0-3085-5915-9FE8-08BF22709BBA}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -11,14 +11,14 @@ Global
 		Release|x64 = Release|x64
 	EndGlobalSection
 	GlobalSection(ProjectConfigurationPlatforms) = postSolution
-		{A6460536-6DC3-BE86-F706-9C93FBC1368B}.Debug|Win32.ActiveCfg = Debug|Win32
-		{A6460536-6DC3-BE86-F706-9C93FBC1368B}.Debug|Win32.Build.0 = Debug|Win32
-		{A6460536-6DC3-BE86-F706-9C93FBC1368B}.Debug|x64.ActiveCfg = Debug|x64
-		{A6460536-6DC3-BE86-F706-9C93FBC1368B}.Debug|x64.Build.0 = Debug|x64
-		{A6460536-6DC3-BE86-F706-9C93FBC1368B}.Release|Win32.ActiveCfg = Release|Win32
-		{A6460536-6DC3-BE86-F706-9C93FBC1368B}.Release|Win32.Build.0 = Release|Win32
-		{A6460536-6DC3-BE86-F706-9C93FBC1368B}.Release|x64.ActiveCfg = Release|x64
-		{A6460536-6DC3-BE86-F706-9C93FBC1368B}.Release|x64.Build.0 = Release|x64
+		{15E46CD0-3085-5915-9FE8-08BF22709BBA}.Debug|Win32.ActiveCfg = Debug|Win32
+		{15E46CD0-3085-5915-9FE8-08BF22709BBA}.Debug|Win32.Build.0 = Debug|Win32
+		{15E46CD0-3085-5915-9FE8-08BF22709BBA}.Debug|x64.ActiveCfg = Debug|x64
+		{15E46CD0-3085-5915-9FE8-08BF22709BBA}.Debug|x64.Build.0 = Debug|x64
+		{15E46CD0-3085-5915-9FE8-08BF22709BBA}.Release|Win32.ActiveCfg = Release|Win32
+		{15E46CD0-3085-5915-9FE8-08BF22709BBA}.Release|Win32.Build.0 = Release|Win32
+		{15E46CD0-3085-5915-9FE8-08BF22709BBA}.Release|x64.ActiveCfg = Release|x64
+		{15E46CD0-3085-5915-9FE8-08BF22709BBA}.Release|x64.Build.0 = Release|x64
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

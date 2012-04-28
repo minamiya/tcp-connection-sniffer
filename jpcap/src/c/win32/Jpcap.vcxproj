@@ -90,7 +90,8 @@
   <PropertyGroup Label="UserMacros" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
     <LinkIncremental>true</LinkIncremental>
-    <IncludePath>$(ProjectDir)WpdPack\Include;$(ProjectDir)jdk\include\win32;$(ProjectDir)src\include;$(ProjectDir)jdk\include;$(IncludePath)</IncludePath>
+    <IncludePath>$(ProjectDir)WpdPack\Include;$(ProjectDir)jdk\include\win32;$(ProjectDir)..\include;$(ProjectDir)jdk\include;$(IncludePath)</IncludePath>
+    <LibraryPath>$(ProjectDir)WpdPack\Lib;$(LibraryPath)</LibraryPath>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <LinkIncremental>true</LinkIncremental>
