@@ -116,6 +116,14 @@ JNIEXPORT void JNICALL Java_jpcap_JpcapCaptor_setFilter
 
 /*
  * Class:     jpcap_JpcapCaptor
+ * Method:    setJpcapFilter
+ * Signature: (Ljpcap/JpcapFilter;)V
+ */
+JNIEXPORT void JNICALL Java_jpcap_JpcapCaptor_setJpcapFilter
+  (JNIEnv *, jobject, jobject);
+
+/*
+ * Class:     jpcap_JpcapCaptor
  * Method:    updateStat
  * Signature: ()V
  */

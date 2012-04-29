@@ -61,7 +61,7 @@
 	</target>
 	
 	<target name="javah" depends="compile">
-		<javah destdir="src/c" classpath="bin" force="true">
+		<javah destdir="src/c" classpath="${build.classes}" force="true">
 			<class name="jpcap.JpcapCaptor"/>
 			<class name="jpcap.JpcapSender"/>
 			<class name="jpcap.JpcapWriter"/>

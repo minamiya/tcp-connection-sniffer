@@ -226,6 +226,20 @@ public class JpcapCaptor extends JpcapInstance {
 	 */
 	public native void setFilter(String condition, boolean optimize)
 			throws java.io.IOException;
+	
+	
+	/**
+	 * Sets a Jpcap level filter, this filter is used to do a very simple
+	 * filtering setting for packets, all of those criteria are "and" operation,
+	 * usually, if it is not a pppoe/vpn network environment, suggest to use
+	 * {@link #setFilter(String, boolean)}, which is much more powerful. This
+	 * filter action is done at Jpcap native library, so it will be a bit faster
+	 * than doing it in Java after packet java instances are created.
+	 * 
+	 * @param filter
+	 *            the packet filter definition
+	 */
+	public native void setJpcapFilter(JpcapFilter filter);
 
 	/**
 	 * Updates {@link #received_packets received_packets} and
