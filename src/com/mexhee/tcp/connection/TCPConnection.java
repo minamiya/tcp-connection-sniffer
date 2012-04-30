@@ -114,7 +114,7 @@ public class TCPConnection {
 	public TCPConnectionState getState() {
 		return state;
 	}
-	
+
 	/**
 	 * return whether both client stream and server stream are finished, just
 	 * need waiting for fin packets.
@@ -172,9 +172,8 @@ public class TCPConnection {
 		case FinishWait1:
 			processFinishWait1AckPacket(ackPacket);
 			break;
-		case FinishWait2:
-			processFinishWait2AckPacket(ackPacket);
-			stateListener.onClosing(this);
+		case LastAck:
+			processLastAckPacket(ackPacket);
 			break;
 		}
 		lastUpdated = new Date();
@@ -186,22 +185,26 @@ public class TCPConnection {
 		} else if (isSentByServer(ackPacket)) {
 			updateServerCounter(ackPacket);
 		} else {
-			throw new RuntimeException("incorrect seq number");
+			throw new RuntimeException("incorrect seq number for finishWait1");
 		}
 		state = TCPConnectionState.CloseWait;
-		stateListener.onSynReceived(this);
+		stateListener.onCloseWait(this);
 	}
 
-	private void processFinishWait2AckPacket(TCPPacket ackPacket) {
+	/**
+	 * both side received FIN and sent ACK, then the connection is going to be
+	 * CLOSED state
+	 */
+	private void processLastAckPacket(TCPPacket ackPacket) {
 		if (ackPacket.getAckNum() == clientCounter.sequence + 1) {
 			updateClientCounter(ackPacket);
 		} else if (ackPacket.getAckNum() == serverCounter.sequence + 1) {
 			updateServerCounter(ackPacket);
 		} else {
-			throw new RuntimeException("incorrect seq number");
+			throw new RuntimeException("incorrect seq number for last ACK");
 		}
-		state = TCPConnectionState.LastAck;
-		stateListener.onLastAck(this);
+		state = TCPConnectionState.Closed;
+		stateListener.onClosed(this);
 	}
 
 	private void processHandshake3AckPacket(TCPPacket ackPacket) {
@@ -310,22 +313,58 @@ public class TCPConnection {
 		lastUpdated = new Date();
 	}
 
+	/**
+	 * According to tcp protocol, if any side sends out rst packet, then these
+	 * tcp connection will be closed, and all those data in buffer will also be
+	 * thrown away.
+	 */
+	protected void processRstPacket(TCPPacket rstPacket) {
+		if (isSentByClient(rstPacket)) {
+			updateCounter(clientCounter, rstPacket);
+		} else if (isSentByServer(rstPacket)) {
+			updateCounter(serverCounter, rstPacket);
+		} else {
+			throw new RuntimeException("incorrect seq number for rst packet");
+		}
+		if (!clientInputStream.isFinished()) {
+			clientInputStream.finish(false);
+		}
+		if (!serverInputStream.isFinished()) {
+			serverInputStream.finish(false);
+		}
+		stateListener.onClosed(this);
+		lastUpdated = new Date();
+	}
+
 	private boolean updateConnectionStateAfterReceivedFinishPacket(TCPPacket tcpPacket, Counter counter) {
 		/*
-		 * whether current packet is the first fin packet, but not the second
-		 * one, as when closing a connection, it usually needs 4-way handshakes
-		 * to really close a tcp connection, in these 4-way handshakes, it
-		 * includes two fin packet
+		 * return whether current packet is the first fin packet, but not the
+		 * second one, as when closing a connection, it usually needs 4-way
+		 * handshakes to really close a tcp connection, in these 4-way
+		 * handshakes, it includes two fin packet
 		 */
 		boolean isFirstFinPacket = false;
 		if (state == TCPConnectionState.Established) {
+			/*
+			 * first FIN packet is detected
+			 */
 			stateListener.onFinishWait1(this);
 			state = TCPConnectionState.FinishWait1;
 			isFirstFinPacket = true;
-		} else {
-			stateListener.onFinishWait2(this);
-			state = TCPConnectionState.FinishWait2;
-			stateListener.onClosed(this);
+		} else if (state == TCPConnectionState.CloseWait) {
+			/*
+			 * After first FIN packet sent, and this is the second FIN
+			 */
+			state = TCPConnectionState.LastAck;
+			stateListener.onLastAck(this);
+		} else if (state == TCPConnectionState.FinishWait1) {
+			/*
+			 * just sent FIN, and expect to receive a ACK from another side, but
+			 * received a FIN, then it means another side is also sending FIN
+			 * packet, then it should be going to CLOSING state
+			 */
+			stateListener.onClosing(this);
+			state = TCPConnectionState.Closing;
 		}
 		updateCounter(counter, tcpPacket);
 		return isFirstFinPacket;

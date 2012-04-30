@@ -140,6 +140,22 @@ public class ConnectionDetail {
 		this.serverPort = serverPort;
 	}
 
+	/**
+	 * whether these two connection detail has the same src ip&port and dest
+	 * ip&port
+	 * 
+	 * @param connectionDetail
+	 *            another connection detail
+	 * @return whether these two connection detail has the same src ip&port and
+	 *         dest ip&port
+	 */
+	public boolean isTheSame(ConnectionDetail connectionDetail) {
+		return getClientAddress().equals(connectionDetail.getClientAddress())
+				&& getClientPort() == connectionDetail.getClientPort()
+				&& getServerAddress().equals(connectionDetail.getServerAddress())
+				&& getServerPort() == connectionDetail.getServerPort();
+	}
+
 	@Override
 	public String toString() {
 		return clientAddress.getHostAddress() + "(" + clientPort + ")->" + serverAddress.getHostAddress() + "("

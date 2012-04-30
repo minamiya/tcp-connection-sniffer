@@ -110,7 +110,9 @@ public class TCPPacketsRecorder {
 	 * @throws IOException
 	 */
 	public void start() throws IOException {
-		getCaptor().setFilter(filter.toString(), true);
+		getCaptor().setJpcapFilter(filter.getJpcapFilter());
+		//TODO: after jpcapFilter function is ready, remove below code
+		getCaptor().setFilter("tcp and host 192.168.1.1", true);
 		getCaptor().loopPacket(0, new DumpPacketReceiver());
 	}
 

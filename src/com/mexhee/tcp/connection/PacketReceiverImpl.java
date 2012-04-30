@@ -61,6 +61,9 @@ public class PacketReceiverImpl implements PacketReceiver {
 			connection.processSyncAckPacket(tcpPacket);
 			return;
 		}
+		if(tcpPacket.isRest()){
+			connection.processRstPacket(tcpPacket);
+		}
 		if (tcpPacket.isAck()) {
 			connection.processAckPacket(tcpPacket);
 		}

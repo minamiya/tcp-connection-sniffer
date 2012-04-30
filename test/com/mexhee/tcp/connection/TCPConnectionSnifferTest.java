@@ -16,14 +16,14 @@ public class TCPConnectionSnifferTest {
 	public static void setup() throws UnknownHostException {
 		sniffer = new TCPConnectionSniffer();
 		ConnectionFilter filter = new ConnectionFilter();
-		filter.addServerFilter("192.168.1.1", 80);
+//		filter.addServerFilter("192.168.1.1", 80);
 		sniffer.setConnectionFilter(filter);
 	}
 
 	// didn't add Test annoation as the testStartUp method will block current
 	// thread, just skip current testing if not a manual testing
 
-	//@Test
+//	@Test
 	public void testStartUp() throws IOException {
 		sniffer.startup(TCPConnectionSniffer.allInterfaces()[2], new ViewTCPConnection());
 	}
