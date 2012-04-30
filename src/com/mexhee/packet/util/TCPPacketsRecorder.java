@@ -16,43 +16,47 @@ import jpcap.packet.Packet;
 
 import com.mexhee.tcp.connection.ConnectionDetail;
 import com.mexhee.tcp.connection.PacketReceiver;
-import com.mexhee.tcp.connection.configuration.ConnectionFilter;
-import com.mexhee.tcp.connection.jpacp.TCPPacketImpl;
+import com.mexhee.tcp.connection.PacketReceiverImpl;
+import com.mexhee.tcp.connection.listener.ConnectionFilter;
+import com.mexhee.tcp.connection.listener.DefaultTCPConnectionSnifferListener;
+import com.mexhee.tcp.connection.listener.TCPConnectionHandler;
+import com.mexhee.tcp.connection.listener.TCPConnectionSnifferListener;
 import com.mexhee.tcp.packet.TCPPacket;
+import com.mexhee.tcp.packet.TCPPacketImpl;
 
 /**
  * Sniffer tcp packets, and serialize them into file system (dump file) in
  * received sequence, those tcp packets sent in the same tcp connection will be
  * written in the same file, in the other word, one tcp connection will generate
- * one dump file. 
+ * one dump file.
  * 
  * A sample code used to dump tcp connections to/from 192.168.1.1:
  * 
  * <pre>
- *  ConnectionFilter filter = new ConnectionFilter();
-	filter.addHost("192.168.1.1");
-	TCPPacketsRecorder recorder = new TCPPacketsRecorder(filter, JpcapCaptor.getDeviceList()[0], "c:/dump");
-	recorder.start();
+ * ConnectionFilter filter = new ConnectionFilter();
+ * filter.addHost(&quot;192.168.1.1&quot;);
+ * TCPPacketsRecorder recorder = new TCPPacketsRecorder(filter, JpcapCaptor.getDeviceList()[0], &quot;c:/dump&quot;);
+ * recorder.start();
  * </pre>
  * 
  * 
  * 
- * A sample code to print all the packet information 
+ * A sample code to print all the packet information
  * 
  * <pre>
- * TCPPacketsRecorder.open("c:/dump/192.168.1.100(2350)-192.168.1.1(80)_1334495098578.dump", new PacketReceiver() {
-			&#064;Override
-			public void pick(TCPPacket tcpPacket) throws IOException {
-				StringBuffer sb = new StringBuffer();
-				sb.append(tcpPacket.toString());
-				sb.append("\n");
-				if (tcpPacket.isContainsData()) {
-					sb.append(new String(tcpPacket.getData()));
-				}
-				sb.append("\n");
-				System.out.println(sb.toString());
-			}
-		});
+ * TCPPacketsRecorder.open(&quot;c:/dump/192.168.1.100(2350)-192.168.1.1(80)_1334495098578.dump&quot;, new PacketReceiver() {
+ * 	&#064;Override
+ * 	public void pick(TCPPacket tcpPacket) throws IOException {
+ * 		StringBuffer sb = new StringBuffer();
+ * 		sb.append(tcpPacket.toString());
+ * 		sb.append(&quot;\n&quot;);
+ * 		if (tcpPacket.isContainsData()) {
+ * 			sb.append(new String(tcpPacket.getData()));
+ * 		}
+ * 		sb.append(&quot;\n&quot;);
+ * 		System.out.println(sb.toString());
+ * 	}
+ * });
  * </pre>
  * 
  * TODO: make the output file zipable, then it will reduce file size
@@ -123,25 +127,29 @@ public class TCPPacketsRecorder {
 	}
 
 	/**
-	 * open a dump file, and loop all those tcp packets serialized in dump file
-	 * using receiver to process
+	 * open a dump file, and loop all those tcp packets serialized in dump file,
+	 * transfer them into a tcp connection instance
 	 * 
 	 * @param dumpFile
 	 *            dumpFile full path
-	 * @param receiver
-	 *            a service used to process a tcp packet
+	 * @param handler
+	 *            tcp connection handler
 	 * @throws ClassNotFoundException
 	 *             thrown by deserialize objects from dump file
 	 * @throws IOException
 	 */
 
-	public static void open(String dumpFile, final PacketReceiver receiver) throws IOException, ClassNotFoundException {
+	public static void open(String dumpFile, final TCPConnectionHandler handler) throws IOException,
+			ClassNotFoundException {
 		File f = new File(dumpFile);
 		if (!f.exists() || !f.isFile() || !f.getName().endsWith(DUMP_FILE_EXTENATION)) {
 			throw new IOException("please check dump file " + dumpFile);
 		}
 		ObjectInputStream ois = new ObjectInputStream(new FileInputStream(f));
 		jpcap.packet.TCPPacket tcpPacket = null;
+		TCPConnectionSnifferListener snifferListener = new DefaultTCPConnectionSnifferListener(handler,
+				new ConnectionFilter());
+		PacketReceiver receiver = new PacketReceiverImpl(snifferListener);
 		try {
 			while ((tcpPacket = (jpcap.packet.TCPPacket) ois.readObject()) != null) {
 				receiver.pick(new TCPPacketImpl(tcpPacket));
@@ -159,13 +167,13 @@ public class TCPPacketsRecorder {
 	 * 
 	 * @param dumpFileFolder
 	 *            a folder that contains dump file
-	 * @param receiver
-	 *            a service used to process a tcp packet
+	 * @param handler
+	 *            tcp connection handler
 	 * 
-	 * @see #open(String, PacketReceiver)
+	 * @see #open(String, TCPConnectionHandler)
 	 */
 
-	public static void scan(String dumpFileFolder, final PacketReceiver receiver) throws IOException,
+	public static void scan(String dumpFileFolder, final TCPConnectionHandler handler) throws IOException,
 			ClassNotFoundException {
 		File folder = new File(dumpFileFolder);
 		if (!folder.isDirectory()) {
@@ -173,7 +181,7 @@ public class TCPPacketsRecorder {
 		}
 		for (File f : folder.listFiles()) {
 			if (f.isFile() && f.getName().endsWith(DUMP_FILE_EXTENATION)) {
-				open(f.getAbsolutePath(), receiver);
+				open(f.getAbsolutePath(), handler);
 			}
 		}
 	}
@@ -188,7 +196,7 @@ public class TCPPacketsRecorder {
 		}
 		return writer;
 	}
-	
+
 	class DumpPacketReceiver implements jpcap.PacketReceiver {
 
 		@Override

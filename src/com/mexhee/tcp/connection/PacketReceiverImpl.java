@@ -7,8 +7,7 @@ import java.util.concurrent.ConcurrentHashMap;
 
 import org.apache.log4j.Logger;
 
-import com.mexhee.tcp.connection.configuration.PacketListener;
-import com.mexhee.tcp.connection.configuration.TCPConnectionConfiguration;
+import com.mexhee.tcp.connection.listener.TCPConnectionSnifferListener;
 import com.mexhee.tcp.packet.TCPPacket;
 
 /**
@@ -20,12 +19,10 @@ public class PacketReceiverImpl implements PacketReceiver {
 
 	private Map<ConnectionDetail, TCPConnection> activeConnections = new ConcurrentHashMap<ConnectionDetail, TCPConnection>();
 
-	private TCPConnectionConfiguration configuration;
-	private PacketListener packetListener;
+	private TCPConnectionSnifferListener snifferListener;
 
-	public PacketReceiverImpl(TCPConnectionConfiguration configuration) {
-		this.configuration = configuration;
-		this.packetListener = configuration.getPacketListener();
+	public PacketReceiverImpl(TCPConnectionSnifferListener snifferListener) {
+		this.snifferListener = snifferListener;
 	}
 
 	/**
@@ -43,9 +40,8 @@ public class PacketReceiverImpl implements PacketReceiver {
 			if (logger.isDebugEnabled())
 				logger.debug("hands shake 1 packet");
 			ConnectionDetail connectionDetail = tcpPacket.getConnectionDetail();
-			if (configuration.isAcceptable(connectionDetail)) {
-				TCPConnection connection = new TCPConnection(connectionDetail, packetListener,
-						configuration.getConnectionStateListener());
+			if (snifferListener.isAcceptable(connectionDetail)) {
+				TCPConnection connection = new TCPConnection(connectionDetail, snifferListener.getConnectionStateListener());
 				activeConnections.put(connectionDetail, connection);
 				connection.processSyncPacket(tcpPacket);
 			} else {
@@ -57,7 +53,6 @@ public class PacketReceiverImpl implements PacketReceiver {
 		TCPConnection connection = activeConnections.get(tcpPacket.getConnectionDetail());
 		// the connect is not accepted, so ignore this packet
 		if (connection == null) {
-			packetListener.ignoreTCPPacket(tcpPacket);
 			return;
 		}
 		if (tcpPacket.isHandsShake2Packet()) {

@@ -4,7 +4,7 @@ package com.mexhee.tcp.connection;
 import java.net.InetAddress;
 import java.net.UnknownHostException;
 
-import com.mexhee.tcp.connection.jpacp.TCPPacketImpl;
+import com.mexhee.tcp.packet.TCPPacketImpl;
 
 import jpcap.packet.TCPPacket;
 

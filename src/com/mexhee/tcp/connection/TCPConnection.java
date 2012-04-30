@@ -7,12 +7,10 @@ import java.util.concurrent.ConcurrentHashMap;
 
 import org.apache.log4j.Logger;
 
-import com.mexhee.io.TimeMeasurableCombinedInputStream;
 import com.mexhee.io.DynamicByteArrayInputStream;
-import com.mexhee.tcp.connection.configuration.PacketListener;
-import com.mexhee.tcp.connection.configuration.TCPConnectionStateListener;
+import com.mexhee.io.TimeMeasurableCombinedInputStream;
+import com.mexhee.tcp.connection.listener.TCPConnectionStateListener;
 import com.mexhee.tcp.packet.DuplicatedPacketException;
-import com.mexhee.tcp.packet.MergedTCPPacket;
 import com.mexhee.tcp.packet.TCPPacket;
 
 /**
@@ -39,7 +37,6 @@ public class TCPConnection {
 
 	private TCPConnectionState state;
 
-	private PacketListener packetListener;
 	private TCPConnectionStateListener stateListener;
 	// indicate client or server send the FIN packet
 	private boolean isClientRequestClosing = false;
@@ -50,10 +47,8 @@ public class TCPConnection {
 	private StreamEvent latestEvent = null;
 	private Date lastUpdated = new Date();
 
-	public TCPConnection(ConnectionDetail connectionDetail, PacketListener packetListener,
-			TCPConnectionStateListener stateListener) {
+	public TCPConnection(ConnectionDetail connectionDetail, TCPConnectionStateListener stateListener) {
 		this.connectionDetail = connectionDetail;
-		this.packetListener = packetListener;
 		this.stateListener = stateListener;
 	}
 
@@ -119,6 +114,14 @@ public class TCPConnection {
 	public TCPConnectionState getState() {
 		return state;
 	}
+	
+	/**
+	 * return whether both client stream and server stream are finished, just
+	 * need waiting for fin packets.
+	 */
+	public boolean isFinished() {
+		return clientInputStream.isFinished() && serverInputStream.isFinished();
+	}
 
 	private void updateClientCounter(TCPPacket packet) {
 		updateCounter(clientCounter, packet);
@@ -141,7 +144,6 @@ public class TCPConnection {
 		updateClientCounter(syncPacket);
 		state = TCPConnectionState.SynSent;
 		stateListener.onSynSent(this);
-		packetListener.consumeTCPPacket(syncPacket);
 		lastUpdated = new Date();
 	}
 
@@ -156,7 +158,6 @@ public class TCPConnection {
 		updateServerCounter(syncAckPacket);
 		state = TCPConnectionState.SynReceived;
 		stateListener.onSynReceived(this);
-		packetListener.consumeTCPPacket(syncAckPacket);
 		lastUpdated = new Date();
 	}
 
@@ -189,7 +190,6 @@ public class TCPConnection {
 		}
 		state = TCPConnectionState.CloseWait;
 		stateListener.onSynReceived(this);
-		packetListener.consumeTCPPacket(ackPacket);
 	}
 
 	private void processFinishWait2AckPacket(TCPPacket ackPacket) {
@@ -202,7 +202,6 @@ public class TCPConnection {
 		}
 		state = TCPConnectionState.LastAck;
 		stateListener.onLastAck(this);
-		packetListener.consumeTCPPacket(ackPacket);
 	}
 
 	private void processHandshake3AckPacket(TCPPacket ackPacket) {
@@ -216,17 +215,14 @@ public class TCPConnection {
 		serverCounter.sequence++;
 		state = TCPConnectionState.Established;
 		stateListener.onEstablished(this);
-		packetListener.consumeTCPPacket(ackPacket);
 	}
 
 	private void processDataAckPacket(TCPPacket ackPacket) throws IOException {
 		TCPPacket dataPacket = temporaryStoredDataPackets.remove(ackPacket.getSequence());
 		if (dataPacket != null) {
-			boolean canConsumePacket = false;
 			if (isSentByClient(dataPacket)) {
 				clientCounter.update(ackPacket.getAckNum(), ackPacket.getSequence());
 				serverCounter.update(ackPacket.getSequence(), ackPacket.getAckNum());
-				canConsumePacket = true;
 				if (latestEvent == null) {
 					latestEvent = StreamEvent.createClientWritingEvent(this);
 					clientInputStream.markStreamStartTime(dataPacket.getPacketCaptureTime());
@@ -243,7 +239,6 @@ public class TCPConnection {
 			} else if (isSentByServer(dataPacket)) {
 				clientCounter.update(ackPacket.getSequence(), ackPacket.getAckNum());
 				serverCounter.update(ackPacket.getAckNum(), ackPacket.getSequence());
-				canConsumePacket = true;
 				if (latestEvent == null) {
 					latestEvent = StreamEvent.createServerWritingEvent(this);
 					serverInputStream.markStreamStartTime(dataPacket.getPacketCaptureTime());
@@ -258,22 +253,6 @@ public class TCPConnection {
 				}
 				serverInputStream.append(dataPacket.getData());
 			}
-			if (canConsumePacket) {
-				consumeDataPacket(dataPacket);
-				packetListener.consumeTCPPacket(ackPacket);
-			}
-		} else {
-			packetListener.discardTCPPacket(ackPacket);
-		}
-	}
-
-	private void consumeDataPacket(TCPPacket dataPacket) {
-		if (dataPacket instanceof MergedTCPPacket) {
-			for (TCPPacket packet : ((MergedTCPPacket) dataPacket).getMergedPackets()) {
-				packetListener.consumeTCPPacket(packet);
-			}
-		} else {
-			packetListener.consumeTCPPacket(dataPacket);
 		}
 	}
 
@@ -291,7 +270,6 @@ public class TCPConnection {
 			try {
 				temporaryStoredDataPackets.put(dataPacket.getAckNum(), packet.merge(dataPacket));
 			} catch (DuplicatedPacketException e) {
-				packetListener.duplicatedTCPPacket(dataPacket);
 				temporaryStoredDataPackets.put(dataPacket.getAckNum(), packet);
 			}
 		} else {
@@ -302,7 +280,6 @@ public class TCPConnection {
 
 	protected void processFinishPacket(TCPPacket tcpPacket) throws IOException {
 		TCPPacket dataPacket = temporaryStoredDataPackets.remove(tcpPacket.getAckNum());
-		boolean consumedPacket = false;
 		if (dataPacket != null) {
 			if (isSentByClient(dataPacket)) {
 				clientInputStream.append(dataPacket.getData());
@@ -310,35 +287,24 @@ public class TCPConnection {
 				if (updateConnectionStateAfterReceivedFinishPacket(tcpPacket, clientCounter)) {
 					isClientRequestClosing = true;
 				}
-				consumedPacket = true;
-				packetListener.consumeTCPPacket(dataPacket);
 			} else if (isSentByServer(dataPacket)) {
 				serverInputStream.append(dataPacket.getData());
 				serverInputStream.finish(false);
 				updateConnectionStateAfterReceivedFinishPacket(tcpPacket, serverCounter);
-				consumedPacket = true;
-				packetListener.consumeTCPPacket(dataPacket);
 			}
 		} else {
 			if (isSentByClient(tcpPacket)) {
 				clientInputStream.finish(false);
 				updateConnectionStateAfterReceivedFinishPacket(tcpPacket, clientCounter);
-				consumedPacket = true;
 			} else if (isSentByServer(tcpPacket)) {
 				serverInputStream.finish(false);
 				updateConnectionStateAfterReceivedFinishPacket(tcpPacket, serverCounter);
-				consumedPacket = true;
 			}
 		}
 		// verify there is no left data packet in the cache
 		if (clientInputStream.isFinished() && serverInputStream.isFinished() && temporaryStoredDataPackets.size() > 0) {
 			throw new IOException("There are stil " + temporaryStoredDataPackets.size()
 					+ " packets that haven't been consumed!");
-		}
-		if (consumedPacket) {
-			packetListener.consumeTCPPacket(tcpPacket);
-		} else {
-			packetListener.discardTCPPacket(tcpPacket);
 		}
 		fireEvent();
 		lastUpdated = new Date();
@@ -384,7 +350,7 @@ public class TCPConnection {
 		return isClientRequestClosing;
 	}
 
-	class Counter {
+	private class Counter {
 		long sequence;
 		long ackNum;
 

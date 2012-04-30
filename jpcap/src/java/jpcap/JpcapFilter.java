@@ -158,7 +158,7 @@ public class JpcapFilter {
 	 * @param destPort
 	 *            dest port
 	 */
-	public void setDestPorts(int destPort) {
+	public void addDestPort(int destPort) {
 		this.destPorts.add(destPort + "");
 	}
 

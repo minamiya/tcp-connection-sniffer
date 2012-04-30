@@ -1,4 +1,4 @@
-package com.mexhee.tcp.connection.configuration;
+package com.mexhee.tcp.connection.listener;
 
 import com.mexhee.tcp.connection.ObsoleteConnectionCleaner;
 import com.mexhee.tcp.connection.TCPConnection;

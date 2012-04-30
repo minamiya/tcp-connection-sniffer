@@ -37,11 +37,29 @@ public class ConnectionDetail {
 	private int serverPort;
 	private final Date creationDate = new Date();
 
+	/**
+	 * initialize connection detail instance with parameters
+	 * 
+	 * @param clientAddress
+	 *            connection client address
+	 * @param serverAddress
+	 *            connection server address
+	 * @param clientPort
+	 *            connection client port
+	 * @param serverPort
+	 *            connection server port
+	 */
 	public ConnectionDetail(InetAddress clientAddress, InetAddress serverAddress, int clientPort, int serverPort) {
 		this.clientAddress = clientAddress;
 		this.serverAddress = serverAddress;
 		this.clientPort = clientPort;
 		this.serverPort = serverPort;
+	}
+
+	/**
+	 * initialize connection detail instance
+	 */
+	public ConnectionDetail() {
 	}
 
 	/**
@@ -51,6 +69,75 @@ public class ConnectionDetail {
 
 	public Date getCreationData() {
 		return this.creationDate;
+	}
+
+	/**
+	 * return client address in the connection
+	 */
+	public InetAddress getClientAddress() {
+		return clientAddress;
+	}
+
+	/**
+	 * return server address in the connection
+	 */
+	public InetAddress getServerAddress() {
+		return serverAddress;
+	}
+
+	/**
+	 * return the client port in the connection
+	 */
+	public int getClientPort() {
+		return clientPort;
+	}
+
+	/**
+	 * return the server port in the connection
+	 */
+	public int getServerPort() {
+		return serverPort;
+	}
+
+	/**
+	 * set connection client address
+	 * 
+	 * @param clientAddress
+	 *            client address
+	 */
+	public void setClientAddress(InetAddress clientAddress) {
+		this.clientAddress = clientAddress;
+	}
+
+	/**
+	 * set connection server address
+	 * 
+	 * @param serverAddress
+	 *            server address
+	 */
+	public void setServerAddress(InetAddress serverAddress) {
+		this.serverAddress = serverAddress;
+	}
+
+	/**
+	 * set connection client port
+	 * 
+	 * @param clientPort
+	 *            client port
+	 */
+	public void setClientPort(int clientPort) {
+		this.clientPort = clientPort;
+	}
+
+	/**
+	 * set connection server port
+	 * 
+	 * @param serverPort
+	 *            server port
+	 */
+
+	public void setServerPort(int serverPort) {
+		this.serverPort = serverPort;
 	}
 
 	@Override

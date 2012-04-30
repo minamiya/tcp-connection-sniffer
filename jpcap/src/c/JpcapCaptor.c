@@ -585,6 +585,12 @@ Java_jpcap_JpcapCaptor_setFilter(JNIEnv *env,jobject obj,jstring condition,
   }
 }
 
+/**
+Set Jpcap Filter
+**/
+JNIEXPORT void JNICALL Java_jpcap_JpcapCaptor_setJpcapFilter(JNIEnv *env, jobject captor, jobject jpcapFilter){
+	//TODO: implement it
+}
 
 /**
 Break loop

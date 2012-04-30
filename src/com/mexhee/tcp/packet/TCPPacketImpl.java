@@ -1,9 +1,8 @@
-package com.mexhee.tcp.connection.jpacp;
+package com.mexhee.tcp.packet;
 
 import java.net.InetAddress;
 import java.util.Date;
 
-import com.mexhee.tcp.packet.TCPPacket;
 
 /**
  * A tcp packet implementation base on jpcap library
