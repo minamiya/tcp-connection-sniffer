@@ -16,19 +16,19 @@ public class TCPPacketsRecorderTest {
 
 	@BeforeClass
 	public static void setup() {
-		dumpFolder = new File("test/dump").getAbsolutePath();
+		dumpFolder = new File("test/dump1").getAbsolutePath();
 		System.out.println(dumpFolder);
 	}
-
+	
 	public void testDumpFile() throws IOException {
 		ConnectionFilter filter = new ConnectionFilter();
-		filter.addServerHostFilter("192.168.1.1");
-		TCPPacketsRecorder recorder = new TCPPacketsRecorder(filter, JpcapCaptor.getDeviceList()[0], dumpFolder);
+//		filter.addServerHostFilter("192.168.1.1");
+		TCPPacketsRecorder recorder = new TCPPacketsRecorder(filter, JpcapCaptor.getDeviceList()[2], dumpFolder);
 		recorder.start();
 	}
-
+	
 	public void testRunAppFromDumpFile() throws IOException, ClassNotFoundException {
-		TCPPacketsRecorder.open(dumpFolder + "/192.168.1.100(4606)-192.168.1.1(80)_1162393258000.dump",
+		TCPPacketsRecorder.open(dumpFolder + "/192.168.1.100(6582)-218.77.130.160(80)_1335780709026.dump",
 				new ViewTCPConnection());
 	}
 

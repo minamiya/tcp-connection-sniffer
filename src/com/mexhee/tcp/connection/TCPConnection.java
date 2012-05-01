@@ -1,12 +1,18 @@
 package com.mexhee.tcp.connection;
 
 import java.io.IOException;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Comparator;
 import java.util.Date;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 import org.apache.log4j.Logger;
 
+import com.mexhee.io.AlreadyFinishedStreamException;
+import com.mexhee.io.BufferFullException;
 import com.mexhee.io.DynamicByteArrayInputStream;
 import com.mexhee.io.TimeMeasurableCombinedInputStream;
 import com.mexhee.tcp.connection.listener.TCPConnectionStateListener;
@@ -46,6 +52,8 @@ public class TCPConnection {
 
 	private StreamEvent latestEvent = null;
 	private Date lastUpdated = new Date();
+
+	private boolean maybeBroken = false;
 
 	public TCPConnection(ConnectionDetail connectionDetail, TCPConnectionStateListener stateListener) {
 		this.connectionDetail = connectionDetail;
@@ -152,6 +160,9 @@ public class TCPConnection {
 	 * and process this packet.
 	 */
 	protected void processSyncAckPacket(TCPPacket syncAckPacket) {
+		if (state.isGreaterThan(TCPConnectionState.SynReceived)) {
+			return;
+		}
 		if (syncAckPacket.getAckNum() != clientCounter.sequence + 1) {
 			throw new RuntimeException("sync packet ack number is incorrect!");
 		}
@@ -182,10 +193,8 @@ public class TCPConnection {
 	private void processFinishWait1AckPacket(TCPPacket ackPacket) {
 		if (isSentByClient(ackPacket)) {
 			updateClientCounter(ackPacket);
-		} else if (isSentByServer(ackPacket)) {
-			updateServerCounter(ackPacket);
 		} else {
-			throw new RuntimeException("incorrect seq number for finishWait1");
+			updateServerCounter(ackPacket);
 		}
 		state = TCPConnectionState.CloseWait;
 		stateListener.onCloseWait(this);
@@ -201,7 +210,8 @@ public class TCPConnection {
 		} else if (ackPacket.getAckNum() == serverCounter.sequence + 1) {
 			updateServerCounter(ackPacket);
 		} else {
-			throw new RuntimeException("incorrect seq number for last ACK");
+			logger.warn(connectionDetail.toString() + ":" + "incorrect seq number for last ACK");
+			maybeBroken = true;
 		}
 		state = TCPConnectionState.Closed;
 		stateListener.onClosed(this);
@@ -239,7 +249,7 @@ public class TCPConnection {
 					fireEvent();
 				}
 				clientInputStream.append(dataPacket.getData());
-			} else if (isSentByServer(dataPacket)) {
+			} else {
 				clientCounter.update(ackPacket.getSequence(), ackPacket.getAckNum());
 				serverCounter.update(ackPacket.getAckNum(), ackPacket.getSequence());
 				if (latestEvent == null) {
@@ -260,11 +270,13 @@ public class TCPConnection {
 	}
 
 	private boolean isSentByClient(TCPPacket packet) {
-		return clientCounter.sequence == packet.getSequence();
-	}
-
-	private boolean isSentByServer(TCPPacket packet) {
-		return serverCounter.sequence == packet.getSequence();
+		boolean isSentByClient = connectionDetail.isTheSame(packet.getConnectionDetail());
+		if (clientCounter.sequence != packet.getSequence() && serverCounter.sequence != packet.getSequence()) {
+			maybeBroken = true;
+			logger.warn(connectionDetail.toString() + ":" + (isSentByClient ? "client" : "server")
+					+ " packet sequence number doesn't match!");
+		}
+		return isSentByClient;
 	}
 
 	protected void processDataPacket(TCPPacket dataPacket) {
@@ -290,7 +302,7 @@ public class TCPConnection {
 				if (updateConnectionStateAfterReceivedFinishPacket(tcpPacket, clientCounter)) {
 					isClientRequestClosing = true;
 				}
-			} else if (isSentByServer(dataPacket)) {
+			} else {
 				serverInputStream.append(dataPacket.getData());
 				serverInputStream.finish(false);
 				updateConnectionStateAfterReceivedFinishPacket(tcpPacket, serverCounter);
@@ -299,7 +311,7 @@ public class TCPConnection {
 			if (isSentByClient(tcpPacket)) {
 				clientInputStream.finish(false);
 				updateConnectionStateAfterReceivedFinishPacket(tcpPacket, clientCounter);
-			} else if (isSentByServer(tcpPacket)) {
+			} else {
 				serverInputStream.finish(false);
 				updateConnectionStateAfterReceivedFinishPacket(tcpPacket, serverCounter);
 			}
@@ -321,10 +333,8 @@ public class TCPConnection {
 	protected void processRstPacket(TCPPacket rstPacket) {
 		if (isSentByClient(rstPacket)) {
 			updateCounter(clientCounter, rstPacket);
-		} else if (isSentByServer(rstPacket)) {
-			updateCounter(serverCounter, rstPacket);
 		} else {
-			throw new RuntimeException("incorrect seq number for rst packet");
+			updateCounter(serverCounter, rstPacket);
 		}
 		if (!clientInputStream.isFinished()) {
 			clientInputStream.finish(false);
@@ -332,6 +342,7 @@ public class TCPConnection {
 		if (!serverInputStream.isFinished()) {
 			serverInputStream.finish(false);
 		}
+		temporaryStoredDataPackets.clear();
 		stateListener.onClosed(this);
 		lastUpdated = new Date();
 	}
@@ -371,6 +382,16 @@ public class TCPConnection {
 	}
 
 	/**
+	 * indicate whether the tcp connection is healthy, sometimes, if there are
+	 * some packets lost by kernel or in a incorrect sequence, it will lead to
+	 * the sequence number is not continuous, in those cases, tcp connection
+	 * sniffer will set this {@link #maybeBroken} to true.
+	 */
+	public boolean isMaybeBroken() {
+		return this.maybeBroken;
+	}
+
+	/**
 	 * get time of last packet transferred through this connection, this time is
 	 * not the packet capture time in kernel, but the time processed by tcp
 	 * connection sniffer
@@ -387,6 +408,55 @@ public class TCPConnection {
 	 */
 	public boolean isClientRequestClosing() {
 		return isClientRequestClosing;
+	}
+
+	/**
+	 * close current connection, usually, it is closed by outside monitoring
+	 * thread, such as TimeWait state to Closed state after some time
+	 * 
+	 * @throws IOException
+	 *             exception when handling the data in buffer
+	 */
+	public void close() throws IOException {
+		flushDataPacketsInMemory();
+		stateListener.onClosed(this);
+		state = TCPConnectionState.Closed;
+	}
+
+	private void flushDataPacketsInMemory() throws IOException {
+		if (!temporaryStoredDataPackets.isEmpty()) {
+			this.maybeBroken = true;
+			/**
+			 * flush those data in buffer, it may be an incorrect flushing, as
+			 * it cannot determinate whether the sequence number is continuous
+			 */
+			List<TCPPacket> clientPackets = new ArrayList<TCPPacket>();
+			List<TCPPacket> serverPackets = new ArrayList<TCPPacket>();
+			for (TCPPacket packet : temporaryStoredDataPackets.values()) {
+				if (connectionDetail.isTheSame(packet.getConnectionDetail())) {
+					clientPackets.add(packet);
+				} else {
+					serverPackets.add(packet);
+				}
+			}
+			flushPacketsDataToStream(clientPackets, clientInputStream);
+			flushPacketsDataToStream(serverPackets, serverInputStream);
+			temporaryStoredDataPackets.clear();
+		}
+	}
+
+	private void flushPacketsDataToStream(List<TCPPacket> packets, DynamicByteArrayInputStream stream)
+			throws IOException {
+		Collections.sort(packets, new Comparator<TCPPacket>() {
+			@Override
+			public int compare(TCPPacket o1, TCPPacket o2) {
+				return (int) (o1.getSequence() - o2.getSequence());
+			}
+		});
+		for (TCPPacket packet : packets) {
+			stream.append(packet.getData());
+		}
+		stream.finish(false);
 	}
 
 	private class Counter {

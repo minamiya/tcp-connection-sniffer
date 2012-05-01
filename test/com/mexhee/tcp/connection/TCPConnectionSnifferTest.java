@@ -23,7 +23,7 @@ public class TCPConnectionSnifferTest {
 	// didn't add Test annoation as the testStartUp method will block current
 	// thread, just skip current testing if not a manual testing
 
-//	@Test
+	@Test
 	public void testStartUp() throws IOException {
 		sniffer.startup(TCPConnectionSniffer.allInterfaces()[2], new ViewTCPConnection());
 	}

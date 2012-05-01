@@ -21,6 +21,20 @@ public class ObsoleteConnectionCleaner implements Runnable {
 	 */
 	public static final int TCP_CONNECTION_TIME_OUT = 120 * 1000;
 
+	/**
+	 * When the FIN packet is already sent and usually means the connection just
+	 * need wait for 2MSL to close connection physically.
+	 */
+	public static final int HALF_CLOSED_TIMEOUT = 30 * 1000;
+
+	/**
+	 * when tcp connection sniffer detected that current connection may be
+	 * broken
+	 * 
+	 * @see TCPConnection#isMaybeBroken()
+	 */
+	public static final int BROKEN_TIMEOUT = 20 * 1000;
+
 	public ObsoleteConnectionCleaner(PacketReceiverImpl receiver, TCPConnectionStateListener stateListener) {
 		this.receiver = receiver;
 		this.stateListener = stateListener;
@@ -31,10 +45,14 @@ public class ObsoleteConnectionCleaner implements Runnable {
 		while (true) {
 			try {
 				for (TCPConnection connection : receiver.getActiveConnections()) {
-					if (System.currentTimeMillis() - connection.getLastUpdated().getTime() >= TCP_CONNECTION_TIME_OUT) {
-						stateListener.onTimeoutDetected(connection);
-						if (logger.isInfoEnabled())
-							logger.info(connection.toString() + " has been timeout");
+					long duration = System.currentTimeMillis() - connection.getLastUpdated().getTime();
+					if (connection.isMaybeBroken() && duration >= BROKEN_TIMEOUT) {
+						connectionTimeout(connection);
+					} else if (connection.getState().isGreaterThan(TCPConnectionState.Established)
+							&& duration >= HALF_CLOSED_TIMEOUT) {
+						connection.close();
+					} else if (duration >= TCP_CONNECTION_TIME_OUT) {
+						connectionTimeout(connection);
 					}
 				}
 				if (logger.isInfoEnabled()) {
@@ -42,11 +60,17 @@ public class ObsoleteConnectionCleaner implements Runnable {
 					logger.info("Active tcp connection count:" + connections.size() + ", streaming connection count:"
 							+ getStreamingConnectionCount(connections));
 				}
-				Thread.sleep(10000);
+				Thread.sleep(8000);
 			} catch (Exception e) {
 				logger.error("exception while cleaning timeout connections", e);
 			}
 		}
+	}
+
+	private void connectionTimeout(TCPConnection connection) {
+		stateListener.onTimeoutDetected(connection);
+		if (logger.isInfoEnabled())
+			logger.info(connection.toString() + " has been timeout");
 	}
 
 	/**
