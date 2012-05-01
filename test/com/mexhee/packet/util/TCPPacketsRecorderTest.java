@@ -26,13 +26,13 @@ public class TCPPacketsRecorderTest {
 		TCPPacketsRecorder recorder = new TCPPacketsRecorder(filter, JpcapCaptor.getDeviceList()[2], dumpFolder);
 		recorder.start();
 	}
-	
+	@Test
 	public void testRunAppFromDumpFile() throws IOException, ClassNotFoundException {
-		TCPPacketsRecorder.open(dumpFolder + "/192.168.1.100(6582)-218.77.130.160(80)_1335780709026.dump",
+		TCPPacketsRecorder.open(dumpFolder + "/192.168.1.100(5770)-121.14.1.20(80)_1335859346726.dump",
 				new ViewTCPConnection());
 	}
 
-	@Test
+	
 	public void testRunAppFromDumpFolder() throws IOException, ClassNotFoundException {
 		TCPPacketsRecorder.scan(dumpFolder, new ViewTCPConnection());
 	}

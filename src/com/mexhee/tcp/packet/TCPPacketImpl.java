@@ -3,7 +3,6 @@ package com.mexhee.tcp.packet;
 import java.net.InetAddress;
 import java.util.Date;
 
-
 /**
  * A tcp packet implementation base on jpcap library
  */
@@ -77,6 +76,8 @@ public class TCPPacketImpl extends TCPPacket {
 
 	@Override
 	public Date getPacketCaptureTime() {
-		return new Date(packet.sec);
+		// TODO: this is the incorrect construct, should reference to wincap
+		// API, it should be a relative time starting from WinCap started
+		return new Date(packet.usec);
 	}
 }

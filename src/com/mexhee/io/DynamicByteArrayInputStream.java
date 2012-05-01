@@ -49,7 +49,7 @@ public class DynamicByteArrayInputStream extends
 	private List<StreamMark> newInputStreamMarks = new ArrayList<StreamMark>();
 
 	private final static int READ_TIMEOUT = 30000;
-	private final static int MAX_BUFFER_SIZE = 200 * 1024;
+	private final static int MAX_BUFFER_SIZE = 2000 * 1024;
 
 	/**
 	 * initialize with data in buff

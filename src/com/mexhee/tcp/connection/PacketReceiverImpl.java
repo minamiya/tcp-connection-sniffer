@@ -41,7 +41,8 @@ public class PacketReceiverImpl implements PacketReceiver {
 				logger.debug("hands shake 1 packet");
 			ConnectionDetail connectionDetail = tcpPacket.getConnectionDetail();
 			if (snifferListener.isAcceptable(connectionDetail)) {
-				TCPConnection connection = new TCPConnection(connectionDetail, snifferListener.getConnectionStateListener());
+				TCPConnection connection = new TCPConnection(connectionDetail,
+						snifferListener.getConnectionStateListener());
 				activeConnections.put(connectionDetail, connection);
 				connection.processSyncPacket(tcpPacket);
 			} else {
@@ -55,13 +56,26 @@ public class PacketReceiverImpl implements PacketReceiver {
 		if (connection == null) {
 			return;
 		}
+		if (connection.isOldPacket(tcpPacket)) {
+			return;
+		}
+		
+		if(connection.isFinished()){
+//			logger.warn("closed connection"+tcpPacket.toString());
+			return;
+		}
 		if (tcpPacket.isHandsShake2Packet()) {
 			if (logger.isDebugEnabled())
 				logger.debug("hands shake 2 packet");
-			connection.processSyncAckPacket(tcpPacket);
+			if (connection.getState() == TCPConnectionState.SynSent) {
+				connection.processSyncAckPacket(tcpPacket);
+			} else {
+				logger.warn(connection.getConnectionDetail().toString()
+						+ " received syn/ack packet, but the connection state is" + connection.getState());
+			}
 			return;
 		}
-		if(tcpPacket.isRest()){
+		if (tcpPacket.isRest()) {
 			connection.processRstPacket(tcpPacket);
 		}
 		if (tcpPacket.isAck()) {
@@ -73,6 +87,9 @@ public class PacketReceiverImpl implements PacketReceiver {
 		if (tcpPacket.isFinish()) {
 			connection.processFinishPacket(tcpPacket);
 		}
+		// TODO: take a look those expired packet according to state, and
+		// sequence number
+		// TODO: update the tcp connection instance last update time
 	}
 
 	/**

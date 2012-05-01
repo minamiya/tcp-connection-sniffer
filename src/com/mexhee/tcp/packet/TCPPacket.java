@@ -4,13 +4,20 @@ import java.net.InetAddress;
 import java.util.Date;
 
 import com.mexhee.tcp.connection.ConnectionDetail;
+
 /**
  * A representing of TCP packet abstraction
  */
-public abstract class TCPPacket {
+public abstract class TCPPacket implements Comparable<TCPPacket> {
 
 	/**
-	 * datalink level data, the tcp packet is sent from which host & port, and delivered to which host & port 
+	 * indicate whether current tcp packet is processed by tcp connection
+	 * sniffer
+	 */
+	private boolean consumed = false;
+	/**
+	 * datalink level data, the tcp packet is sent from which host & port, and
+	 * delivered to which host & port
 	 */
 	private ConnectionDetail connectionDetail = null;
 
@@ -18,7 +25,7 @@ public abstract class TCPPacket {
 	 * get the sequence number
 	 */
 	public abstract long getSequence();
-	
+
 	/**
 	 * get the ack number
 	 */
@@ -43,7 +50,7 @@ public abstract class TCPPacket {
 	 * is rest flag
 	 */
 	public abstract boolean isRest();
-	
+
 	/**
 	 * is fin flag
 	 */
@@ -75,14 +82,16 @@ public abstract class TCPPacket {
 	public abstract byte[] getData();
 
 	/**
-	 * whether this packet is a syn packet, which is the first packet to do hands shake connection
+	 * whether this packet is a syn packet, which is the first packet to do
+	 * hands shake connection
 	 */
 	public boolean isHandsShake1Packet() {
 		return isSyn() && !isAck();
 	}
 
 	/**
-	 * whether this packet is a syn/ack packet, which is the second packet to do hands shake connection
+	 * whether this packet is a syn/ack packet, which is the second packet to do
+	 * hands shake connection
 	 */
 	public boolean isHandsShake2Packet() {
 		return isSyn() && isAck();
@@ -90,10 +99,12 @@ public abstract class TCPPacket {
 
 	/**
 	 * Merge another tcp packet data into this packet
+	 * 
 	 * @throws DuplicatedPacketException
-	 * 		when the other packet is already merged into current packet
-	 * @throws RuntimeException "cannot merge two packets due to different ack number!"
-	 * 		when the ack number doesn't match
+	 *             when the other packet is already merged into current packet
+	 * @throws RuntimeException
+	 *             "cannot merge two packets due to different ack number!" when
+	 *             the ack number doesn't match
 	 */
 	public TCPPacket merge(TCPPacket anotherPacket) throws DuplicatedPacketException {
 		return new MergedTCPPacket(this, anotherPacket);
@@ -107,7 +118,8 @@ public abstract class TCPPacket {
 	}
 
 	/**
-	 * get the packet datalink level information, from host & port and to host & port
+	 * get the packet datalink level information, from host & port and to host &
+	 * port
 	 */
 	public ConnectionDetail getConnectionDetail() {
 		if (connectionDetail == null) {
@@ -116,7 +128,22 @@ public abstract class TCPPacket {
 		}
 		return connectionDetail;
 	}
-	
+
+	/**
+	 * set current packet consumed flag to true
+	 */
+	public void consumedPacket() {
+		this.consumed = true;
+	}
+
+	/**
+	 * indicate whether current tcp packet is processed by tcp connection
+	 * sniffer
+	 */
+	public boolean isPacketConsumed() {
+		return this.consumed;
+	}
+
 	/**
 	 * get the packet capture time in kernel
 	 */
@@ -131,6 +158,16 @@ public abstract class TCPPacket {
 		sb.append(isSyn() ? ",syn" : "");
 		sb.append(isAck() ? ",ack" : "");
 		sb.append(isFinish() ? ",fin" : "");
+		sb.append(isPush() ? ",psh" : (isContainsData() ? ",data" : ""));
+		sb.append(isRest() ? ",rst" : "");
 		return sb.toString();
+	}
+
+	/**
+	 * TCP packet is comparable according to
+	 */
+	@Override
+	public int compareTo(TCPPacket anotherPacket) {
+		return (int) (getSequence() - anotherPacket.getSequence());
 	}
 }
