@@ -32,6 +32,7 @@ public class PacketReceiverImpl implements PacketReceiver {
 	 * 1. distinguish tcp packet type
 	 * 2. if it is syn packet, create a new tcp connection instance, else find the existing tcp connection instance from cache
 	 * 3. according to different types of tcp packet, pass the found tcp connection instance to process this tcp packet
+	 * 4. consolidate those packets, if in a incorrect sequence, put them into buffer, and when correct packets arrives, pass to tcp connection with the buffered packets
 	 * </pre>
 	 */
 	@Override
@@ -56,12 +57,13 @@ public class PacketReceiverImpl implements PacketReceiver {
 		if (connection == null) {
 			return;
 		}
+		tcpPacket.detectPacketFlowDirection(connection.getConnectionDetail());
 		if (connection.isOldPacket(tcpPacket)) {
+			logger.info("old packet seq " + tcpPacket);
 			return;
 		}
-		
-		if(connection.isFinished()){
-//			logger.warn("closed connection"+tcpPacket.toString());
+
+		if (connection.isFinished()) {
 			return;
 		}
 		if (tcpPacket.isHandsShake2Packet()) {
@@ -75,13 +77,30 @@ public class PacketReceiverImpl implements PacketReceiver {
 			}
 			return;
 		}
+		if (connection.isMatchSequence(tcpPacket)) {
+			handlePacket(tcpPacket, connection);
+		} else {
+			if (tcpPacket.isSentByClient()) {
+				connection.getPacketsBuffer().addToCSTemporaryStoredDataPackets(tcpPacket);
+			} else {
+				connection.getPacketsBuffer().addToSCTemporaryStoredDataPackets(tcpPacket);
+			}
+			TCPPacket bufferedPacket = null;
+			while ((bufferedPacket = connection.getPacketsBuffer().pickupPacket(connection.getSequenceNumCounter(),
+					connection)) != null) {
+				handlePacket(bufferedPacket, connection);
+			}
+		}
+	}
+
+	private void handlePacket(TCPPacket tcpPacket, TCPConnection connection) throws IOException {
 		if (tcpPacket.isRest()) {
 			connection.processRstPacket(tcpPacket);
 		}
 		if (tcpPacket.isAck()) {
 			connection.processAckPacket(tcpPacket);
 		}
-		if (tcpPacket.isPush() || tcpPacket.isContainsData()) {
+		if (tcpPacket.isContainsData()) {
 			connection.processDataPacket(tcpPacket);
 		}
 		if (tcpPacket.isFinish()) {

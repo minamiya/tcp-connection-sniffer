@@ -1,16 +1,13 @@
 package com.mexhee.tcp.connection;
 
 import java.io.IOException;
-import java.util.ArrayList;
 import java.util.Date;
-import java.util.List;
-import java.util.SortedSet;
-import java.util.TreeSet;
 
 import org.apache.log4j.Logger;
 
 import com.mexhee.io.DynamicByteArrayInputStream;
 import com.mexhee.io.TimeMeasurableCombinedInputStream;
+import com.mexhee.tcp.connection.SequenceCounter.Counter;
 import com.mexhee.tcp.connection.listener.TCPConnectionStateListener;
 import com.mexhee.tcp.packet.TCPPacket;
 
@@ -28,8 +25,8 @@ public class TCPConnection {
 	// connection
 	private ConnectionDetail connectionDetail;
 
-	// to record client & server side sequence number
-	private Counter counter = new Counter();
+	// to record client & server side sequence & ack number
+	private SequenceCounter counter = new SequenceCounter();
 
 	// key is the ack number
 	// private Map<Long, TCPPacket> temporaryStoredDataPackets = new
@@ -44,21 +41,11 @@ public class TCPConnection {
 	private DynamicByteArrayInputStream serverInputStream = new DynamicByteArrayInputStream();
 	private DynamicByteArrayInputStream clientInputStream = new DynamicByteArrayInputStream();
 
-	/**
-	 * store the data packets (client to server) that cannot match seq number
-	 * due to captured in incorrect sequence
-	 */
-	private SortedSet<TCPPacket> csTemporaryStoredDataPackets = new TreeSet<TCPPacket>();
-	/**
-	 * store the data packets (server to client) that cannot match seq number
-	 * due to captured in incorrect sequence
-	 */
-	private SortedSet<TCPPacket> scTemporaryStoredDataPackets = new TreeSet<TCPPacket>();
-
-	private StreamEvent latestEvent = null;
 	private Date lastUpdated = new Date();
 
 	private boolean maybeBroken = false;
+
+	private PacketsBuffer packetsBuffer = new PacketsBuffer();
 
 	public TCPConnection(ConnectionDetail connectionDetail, TCPConnectionStateListener stateListener) {
 		this.connectionDetail = connectionDetail;
@@ -148,22 +135,23 @@ public class TCPConnection {
 	 * and process this packet.
 	 */
 	protected void processSyncAckPacket(TCPPacket syncAckPacket) {
-		if (syncAckPacket.getAckNum() != counter.clientSeq + 1) {
+		if (syncAckPacket.getAckNum() != counter.clientCounter.seq + 1) {
 			throw new RuntimeException("sync packet ack number is incorrect!");
 		}
 		counter.updateServerCounter(syncAckPacket);
+		counter.clientSequenceAddOne();
 		state = TCPConnectionState.SynReceived;
 		stateListener.onSynReceived(this);
 	}
 
 	/**
 	 * get a {@link Counter} object that represents client and server side
-	 * sequence number
+	 * sequence and ack number
 	 * 
 	 * @return a {@link Counter} object that represents client and server side
-	 *         sequence number
+	 *         sequence and ack number
 	 */
-	public Counter getSequenceNumCounter() {
+	public SequenceCounter getSequenceNumCounter() {
 		return counter;
 	}
 
@@ -186,12 +174,12 @@ public class TCPConnection {
 	}
 
 	private void processFinishWait1AckPacket(TCPPacket ackPacket) {
-		if (isSentByClient(ackPacket)) {
+		if (ackPacket.isSentByClient()) {
 			counter.updateClientCounter(ackPacket);
-			counter.serverSeq++;
+			counter.serverSequenceAddOne();
 		} else {
 			counter.updateServerCounter(ackPacket);
-			counter.clientSeq++;
+			counter.clientSequenceAddOne();
 		}
 		state = TCPConnectionState.CloseWait;
 		stateListener.onCloseWait(this);
@@ -202,27 +190,32 @@ public class TCPConnection {
 	 * CLOSED state
 	 */
 	private void processLastAckPacket(TCPPacket ackPacket) {
-		if (ackPacket.getAckNum() == counter.clientSeq + 1) {
+		if (ackPacket.isSentByClient()) {
+			if (ackPacket.getAckNum() == counter.serverCounter.seq + 1) {
+				logger.warn(connectionDetail.toString() + ":" + "incorrect seq number for last ACK");
+				maybeBroken = true;
+			}
 			counter.updateClientCounter(ackPacket);
-		} else if (ackPacket.getAckNum() == counter.serverSeq + 1) {
-			counter.updateServerCounter(ackPacket);
 		} else {
-			logger.warn(connectionDetail.toString() + ":" + "incorrect seq number for last ACK");
-			maybeBroken = true;
+			if (ackPacket.getAckNum() == counter.clientCounter.seq + 1) {
+				logger.warn(connectionDetail.toString() + ":" + "incorrect seq number for last ACK");
+				maybeBroken = true;
+			}
+			counter.updateServerCounter(ackPacket);
 		}
 		state = TCPConnectionState.Closed;
 		stateListener.onClosed(this);
 	}
 
 	private void processHandshake3AckPacket(TCPPacket ackPacket) {
-		if (ackPacket.getAckNum() != counter.serverSeq + 1) {
+		if (ackPacket.getAckNum() != counter.serverCounter.seq + 1) {
 			throw new RuntimeException("syn packet ack number " + ackPacket.getAckNum() + " is incorrect!");
 		}
 		if (logger.isInfoEnabled())
 			logger.info("new tcp connection detected " + connectionDetail.toString());
 		counter.updateClientCounter(ackPacket);
 		// // server seq should be +1
-		counter.serverSeq++;
+		counter.serverSequenceAddOne();
 		state = TCPConnectionState.Established;
 		stateListener.onEstablished(this);
 	}
@@ -231,98 +224,39 @@ public class TCPConnection {
 		// do nothing
 	}
 
-	private boolean isSentByClient(TCPPacket packet, DismatchedSequenceNumberHandler handler) {
+	boolean isMatchSequence(TCPPacket packet) {
 		boolean isSentByClient = connectionDetail.isTheSame(packet.getConnectionDetail());
-		/**
-		 * whether the checking is necessary, and packet's sequence hasn't been
-		 * applied to the Counter
-		 */
-		if (handler.isEnableChecking() && !packet.isPacketConsumed()) {
-			if (isSentByClient) {
-				if (counter.clientSeq > 0 && !counter.isMatchClientSeq(packet)) {
-					handler.dismatchedSequenceNumber(isSentByClient, packet);
-				}
-			} else {
-				if (counter.serverSeq > 0 && !counter.isMatchServerSeq(packet)) {
-					handler.dismatchedSequenceNumber(isSentByClient, packet);
-				}
-			}
-
+		if (isSentByClient) {
+			return counter.isMatchClientSeq(packet);
+		} else {
+			return counter.isMatchServerSeq(packet);
 		}
-		return isSentByClient;
 	}
 
-	private boolean isSentByClient(TCPPacket packet) {
-		return isSentByClient(packet, new LoggingDismatchedSequenceNumberHandler());
-	}
+	// private boolean isSentByClient(TCPPacket packet,
+	// DismatchedSequenceNumberHandler handler) {
+	//
+	// /**
+	// * whether the checking is necessary, and packet's sequence hasn't been
+	// * applied to the Counter
+	// */
+	// if (handler.isEnableChecking() && !packet.isPacketConsumed()) {
+	//
+	// }
+	// return isSentByClient;
+	// }
+
+	// private boolean isSentByClient(TCPPacket packet) {
+	// return isSentByClient(packet, new
+	// LoggingDismatchedSequenceNumberHandler());
+	// }
 
 	protected void processDataPacket(TCPPacket dataPacket) throws IOException {
-		try {
-			if (isSentByClient(dataPacket, new StoreToBufferDismatchedSequenceNumberHandler())) {
-				processCSDataPacket(dataPacket);
-			} else {
-				processSCDataPacket(dataPacket);
-			}
-		} catch (DismatchedSequenceNumberException e) {
-			// try to process it combining with
-			if (e.isSentByClient) {
-				clearBufferedCSDataPacket();
-			} else {
-				clearBufferedSCDataPacket();
-			}
+		if (dataPacket.isSentByClient()) {
+			processCSDataPacket(dataPacket);
+		} else {
+			processSCDataPacket(dataPacket);
 		}
-	}
-
-	/**
-	 * take a look whether the buffered client to server data packet could be
-	 * consumed
-	 * 
-	 * @throws IOException
-	 *             streaming exception
-	 */
-	private void clearBufferedCSDataPacket() throws IOException {
-		List<TCPPacket> successfullyHandledPackets = new ArrayList<TCPPacket>();
-		for (TCPPacket packet : csTemporaryStoredDataPackets) {
-			if (counter.isMatchClientSeq(packet)) {
-				processCSDataPacket(packet);
-				successfullyHandledPackets.add(packet);
-			} else if (counter.clientSeq > packet.getSequence()) {
-				successfullyHandledPackets.add(packet);
-			} else {
-				// they are already sorted by sequence number, if one cannot
-				// match, then no need continue
-				break;
-			}
-		}
-		csTemporaryStoredDataPackets.removeAll(successfullyHandledPackets);
-		if (!successfullyHandledPackets.isEmpty() && logger.isInfoEnabled())
-			logger.info("successfully processed " + successfullyHandledPackets.size() + " cs packets in buffer");
-	}
-
-	/**
-	 * take a look whether the buffered server to client data packet could be
-	 * consumed
-	 * 
-	 * @throws IOException
-	 *             streaming exception
-	 */
-	private void clearBufferedSCDataPacket() throws IOException {
-		List<TCPPacket> successfullyHandledPackets = new ArrayList<TCPPacket>();
-		for (TCPPacket packet : scTemporaryStoredDataPackets) {
-			if (counter.isMatchServerSeq(packet)) {
-				processSCDataPacket(packet);
-				successfullyHandledPackets.add(packet);
-			} else if (counter.serverSeq > packet.getSequence()) {
-				successfullyHandledPackets.add(packet);
-			} else {
-				// they are already sorted by sequence number, if one cannot
-				// match, then no need continue
-				break;
-			}
-		}
-		scTemporaryStoredDataPackets.removeAll(successfullyHandledPackets);
-		if (!successfullyHandledPackets.isEmpty() && logger.isInfoEnabled())
-			logger.info("successfully processed " + successfullyHandledPackets.size() + " sc packets in buffer");
 	}
 
 	/**
@@ -330,14 +264,15 @@ public class TCPConnection {
 	 * {@link #serverInputStream}
 	 */
 	private void processSCDataPacket(TCPPacket dataPacket) throws IOException {
-		if (latestEvent == null) {
-			latestEvent = StreamEvent.createServerWritingEvent(this);
-			serverInputStream.markStreamStartTime(dataPacket.getPacketCaptureTime());
-		} else if (!latestEvent.isServerWriting()) {
-			if (latestEvent.isClientWriting()) {
-				clientInputStream.finish(true);
+		if (counter.serverCounter.ack == counter.clientCounter.seq) {
+			if (clientInputStream.finish(true)) {
+				clientInputStream.markStreamStartTime(new Date(counter.clientCounter.latestPacketUpdateTime));
 			}
-			latestEvent = StreamEvent.createServerWritingEvent(this);
+		}
+		/**
+		 * first packet
+		 */
+		if (counter.serverCounter.seq == 0) {
 			serverInputStream.markStreamStartTime(dataPacket.getPacketCaptureTime());
 		}
 		serverInputStream.append(dataPacket.getData());
@@ -349,14 +284,15 @@ public class TCPConnection {
 	 * {@link #clientInputStream}
 	 */
 	private void processCSDataPacket(TCPPacket dataPacket) throws IOException {
-		if (latestEvent == null) {
-			latestEvent = StreamEvent.createClientWritingEvent(this);
-			clientInputStream.markStreamStartTime(dataPacket.getPacketCaptureTime());
-		} else if (!latestEvent.isClientWriting()) {
-			if (latestEvent.isServerWriting()) {
-				serverInputStream.finish(true);
+		if (counter.clientCounter.ack == counter.serverCounter.seq) {
+			if (serverInputStream.finish(true)) {
+				serverInputStream.markStreamStartTime(new Date(counter.serverCounter.latestPacketUpdateTime));
 			}
-			latestEvent = StreamEvent.createClientWritingEvent(this);
+		}
+		/**
+		 * first packet
+		 */
+		if (counter.clientCounter.seq == 0) {
 			clientInputStream.markStreamStartTime(dataPacket.getPacketCaptureTime());
 		}
 		clientInputStream.append(dataPacket.getData());
@@ -364,13 +300,11 @@ public class TCPConnection {
 	}
 
 	protected void processFinishPacket(TCPPacket tcpPacket) throws IOException {
-		if (isSentByClient(tcpPacket)) {
-			clearBufferedCSDataPacket();
+		if (tcpPacket.isSentByClient()) {
 			clientInputStream.finish(false);
 			updateConnectionStateAfterReceivedFinishPacket(tcpPacket);
 			counter.updateClientCounter(tcpPacket);
 		} else {
-			clearBufferedSCDataPacket();
 			serverInputStream.finish(false);
 			updateConnectionStateAfterReceivedFinishPacket(tcpPacket);
 			counter.updateServerCounter(tcpPacket);
@@ -380,12 +314,12 @@ public class TCPConnection {
 
 	private void validatePacketsInBuffer() throws IOException {
 		// verify there is no left data packet in the cache
-		if (clientInputStream.isFinished() && csTemporaryStoredDataPackets.size() > 0) {
-			throw new IOException("There are stil " + csTemporaryStoredDataPackets.size()
+		if (clientInputStream.isFinished() && packetsBuffer.csTemporaryStoredPackets.size() > 0) {
+			throw new IOException("There are stil " + packetsBuffer.csTemporaryStoredPackets.size()
 					+ " client to server packets that haven't been consumed!");
 		}
-		if (serverInputStream.isFinished() && scTemporaryStoredDataPackets.size() > 0) {
-			logger.warn("There are stil " + scTemporaryStoredDataPackets.size()
+		if (serverInputStream.isFinished() && packetsBuffer.scTemporaryStoredPackets.size() > 0) {
+			logger.warn("There are stil " + packetsBuffer.scTemporaryStoredPackets.size()
 					+ " server to client packets that haven't been consumed!");
 		}
 	}
@@ -396,7 +330,7 @@ public class TCPConnection {
 	 * thrown away.
 	 */
 	protected void processRstPacket(TCPPacket rstPacket) {
-		if (isSentByClient(rstPacket)) {
+		if (rstPacket.isSentByClient()) {
 			counter.updateClientCounter(rstPacket);
 		} else {
 			counter.updateServerCounter(rstPacket);
@@ -472,22 +406,16 @@ public class TCPConnection {
 		return isClientRequestClosing;
 	}
 
-	protected boolean isOldPacket(TCPPacket packet) {
-		boolean isOld = false;
-		if (isSentByClient(packet, new DisableSequenceNumberCheckingHandler())) {
-			isOld = packet.getSequence() < counter.clientSeq;
-			if (isOld && logger.isInfoEnabled()) {
-				logger.info("old packet seq " + packet.getSequence() + ", current counter client seq "
-						+ counter.clientSeq + " captured at " + packet.getPacketCaptureTime());
-			}
+	PacketsBuffer getPacketsBuffer() {
+		return this.packetsBuffer;
+	}
+
+	boolean isOldPacket(TCPPacket packet) {
+		if (packet.isSentByClient()) {
+			return packet.getSequence() < counter.clientCounter.seq;
 		} else {
-			isOld = packet.getSequence() < counter.serverSeq;
-			if (isOld && logger.isInfoEnabled()) {
-				logger.info("old packet seq " + packet.getSequence() + ", current counter server seq "
-						+ counter.serverSeq + " captured at " + packet.getPacketCaptureTime());
-			}
+			return packet.getSequence() < counter.serverCounter.seq;
 		}
-		return isOld;
 	}
 
 	/**
@@ -498,121 +426,93 @@ public class TCPConnection {
 	 *             exception when handling the data in buffer
 	 */
 	public void close() throws IOException {
-		clearBufferedCSDataPacket();
-		clearBufferedSCDataPacket();
+		// clearBufferedCSDataPacket();
+		// clearBufferedSCDataPacket();
 		stateListener.onClosed(this);
 		state = TCPConnectionState.Closed;
 	}
 
-	private class LoggingDismatchedSequenceNumberHandler implements DismatchedSequenceNumberHandler {
-		@Override
-		public boolean isEnableChecking() {
-			return true;
-		}
+	// private class LoggingDismatchedSequenceNumberHandler implements
+	// DismatchedSequenceNumberHandler {
+	// @Override
+	// public boolean isEnableChecking() {
+	// return true;
+	// }
+	//
+	// @Override
+	// public void dismatchedSequenceNumber(boolean isSentByClient, TCPPacket
+	// packet) {
+	// if (logger.isInfoEnabled()) {
+	// if (isSentByClient) {
+	// logger.info(packet.toString() + " doesn't match client seq number " +
+	// state
+	// + ", current client seq " + counter.clientSeq);
+	// } else {
+	// logger.info(packet.toString() + " doesn't match server seq number " +
+	// state
+	// + ", current server seq " + counter.serverSeq);
+	// }
+	// }
+	// }
+	//
+	// }
+	//
+	// protected PacketsBuffer getPacketsBuffer() {
+	// return this.packetsBuffer;
+	// }
+	//
+	// private class DisableSequenceNumberCheckingHandler implements
+	// DismatchedSequenceNumberHandler {
+	// @Override
+	// public boolean isEnableChecking() {
+	// return false;
+	// }
+	//
+	// @Override
+	// public void dismatchedSequenceNumber(boolean isSentByClient, TCPPacket
+	// packet) {
+	// throw new IllegalAccessError("disabled checking");
+	// }
+	// }
+	//
+	// private class StoreToBufferDismatchedSequenceNumberHandler extends
+	// LoggingDismatchedSequenceNumberHandler {
+	// @Override
+	// public boolean isEnableChecking() {
+	// return true;
+	// }
+	//
+	// @Override
+	// public void dismatchedSequenceNumber(boolean isSentByClient, TCPPacket
+	// packet) {
+	// super.dismatchedSequenceNumber(isSentByClient, packet);
+	// if (isSentByClient) {
+	// csTemporaryStoredDataPackets.add(packet);
+	// } else {
+	// scTemporaryStoredDataPackets.add(packet);
+	// }
+	// if (logger.isInfoEnabled())
+	// logger.info("added " + packet +
+	// " into buffer due to mismatching sequence number");
+	// /**
+	// * need throw this exception to break the continue handling of this
+	// * packet, just need add into buffer
+	// */
+	// throw new DismatchedSequenceNumberException(isSentByClient);
+	// }
+	//
+	// }
+	//
+	// private class DismatchedSequenceNumberException extends RuntimeException
+	// {
+	//
+	// private static final long serialVersionUID = 7240762499196328405L;
+	//
+	// private boolean isSentByClient;
+	//
+	// DismatchedSequenceNumberException(boolean isSentByClient) {
+	// this.isSentByClient = isSentByClient;
+	// }
+	// }
 
-		@Override
-		public void dismatchedSequenceNumber(boolean isSentByClient, TCPPacket packet) {
-			if (logger.isInfoEnabled()) {
-				if (isSentByClient) {
-					logger.info(packet.toString() + " doesn't match client seq number " + state
-							+ ", current client seq " + counter.clientSeq);
-				} else {
-					logger.info(packet.toString() + " doesn't match server seq number " + state
-							+ ", current server seq " + counter.serverSeq);
-				}
-			}
-		}
-
-	}
-
-	private class DisableSequenceNumberCheckingHandler implements DismatchedSequenceNumberHandler {
-		@Override
-		public boolean isEnableChecking() {
-			return false;
-		}
-
-		@Override
-		public void dismatchedSequenceNumber(boolean isSentByClient, TCPPacket packet) {
-			throw new IllegalAccessError("disabled checking");
-		}
-	}
-
-	private class StoreToBufferDismatchedSequenceNumberHandler extends LoggingDismatchedSequenceNumberHandler {
-		@Override
-		public boolean isEnableChecking() {
-			return true;
-		}
-
-		@Override
-		public void dismatchedSequenceNumber(boolean isSentByClient, TCPPacket packet) {
-			super.dismatchedSequenceNumber(isSentByClient, packet);
-			if (isSentByClient) {
-				csTemporaryStoredDataPackets.add(packet);
-			} else {
-				scTemporaryStoredDataPackets.add(packet);
-			}
-			if (logger.isInfoEnabled())
-				logger.info("added " + packet + " into buffer due to mismatching sequence number");
-			/**
-			 * need throw this exception to break the continue handling of this
-			 * packet, just need add into buffer
-			 */
-			throw new DismatchedSequenceNumberException(isSentByClient);
-		}
-
-	}
-
-	private class DismatchedSequenceNumberException extends RuntimeException {
-
-		private static final long serialVersionUID = 7240762499196328405L;
-
-		private boolean isSentByClient;
-
-		DismatchedSequenceNumberException(boolean isSentByClient) {
-			this.isSentByClient = isSentByClient;
-		}
-	}
-
-	private class Counter {
-		private long clientSeq;
-		private long serverSeq;
-
-		void updateClientCounter(TCPPacket packet) {
-			clientSeq = packet.getSequence();
-			if (packet.isContainsData()) {
-				clientSeq += packet.getData().length;
-			}
-			packet.consumedPacket();
-		}
-
-		boolean isMatchClientSeq(TCPPacket packet) {
-			checkWhetherPakcetSeqUpdatedToCounter(packet);
-			return clientSeq == packet.getSequence();
-		}
-
-		private void checkWhetherPakcetSeqUpdatedToCounter(TCPPacket packet) {
-			if (packet.isPacketConsumed()) {
-				throw new RuntimeException(
-						"This packet's sequence is already updated to current Counter, cannot do comparsion!");
-			}
-		}
-
-		void updateServerCounter(TCPPacket packet) {
-			serverSeq = packet.getSequence();
-			if (packet.isContainsData()) {
-				serverSeq += packet.getData().length;
-			}
-			packet.consumedPacket();
-		}
-
-		boolean isMatchServerSeq(TCPPacket packet) {
-			checkWhetherPakcetSeqUpdatedToCounter(packet);
-			return serverSeq == packet.getSequence();
-		}
-
-		@Override
-		public String toString() {
-			return "client seq:" + clientSeq + ", server seq:" + serverSeq;
-		}
-	}
 }

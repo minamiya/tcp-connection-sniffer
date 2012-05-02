@@ -22,6 +22,12 @@ public abstract class TCPPacket implements Comparable<TCPPacket> {
 	private ConnectionDetail connectionDetail = null;
 
 	/**
+	 * the packet sent direction, whether it is from client to server, this
+	 * attribute is meaningful only when comparing with a connection
+	 */
+	private Boolean isSentByClient = null;
+
+	/**
 	 * get the sequence number
 	 */
 	public abstract long getSequence();
@@ -98,19 +104,6 @@ public abstract class TCPPacket implements Comparable<TCPPacket> {
 	}
 
 	/**
-	 * Merge another tcp packet data into this packet
-	 * 
-	 * @throws DuplicatedPacketException
-	 *             when the other packet is already merged into current packet
-	 * @throws RuntimeException
-	 *             "cannot merge two packets due to different ack number!" when
-	 *             the ack number doesn't match
-	 */
-	public TCPPacket merge(TCPPacket anotherPacket) throws DuplicatedPacketException {
-		return new MergedTCPPacket(this, anotherPacket);
-	}
-
-	/**
 	 * whether current tcp packet has data, but no only tcp header
 	 */
 	public boolean isContainsData() {
@@ -142,6 +135,29 @@ public abstract class TCPPacket implements Comparable<TCPPacket> {
 	 */
 	public boolean isPacketConsumed() {
 		return this.consumed;
+	}
+
+	/**
+	 * detect the packet flow, from client to server or from server to client
+	 * 
+	 * @param connectionDetail
+	 *            physical tcp connection detail
+	 */
+	public void detectPacketFlowDirection(ConnectionDetail connectionDetail) {
+		isSentByClient = this.connectionDetail.isTheSame(connectionDetail);
+	}
+
+	/**
+	 * whether the packet flow is from client to server
+	 * 
+	 * @return whether the packet flow is from client to server
+	 * 
+	 * @throws NullPointerException
+	 *             when {@link #detectPacketFlowDirection(ConnectionDetail)}
+	 *             hasn't been invoked
+	 */
+	public boolean isSentByClient() {
+		return isSentByClient;
 	}
 
 	/**

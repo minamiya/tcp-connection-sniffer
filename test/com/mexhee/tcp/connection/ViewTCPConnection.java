@@ -24,7 +24,7 @@ public class ViewTCPConnection implements TCPConnectionHandler {
 		int size = 0;
 		try {
 			while ((size = stream.read(buffer)) > 0) {
-//				System.out.print(new String(buffer, 0, size));
+				System.out.print(new String(buffer, 0, size));
 			}
 		} catch (IOException e) {
 			e.printStackTrace();

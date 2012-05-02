@@ -83,11 +83,22 @@ public class DynamicByteArrayInputStream extends
 	public DynamicByteArrayInputStream() {
 	}
 
-	private void addMarkPos(Date endTime) {
+	private boolean addMarkPos(Date endTime) {
+		/**
+		 * to avoid duplicated marking
+		 */
 		if (bufferSize > 0) {
-			newInputStreamMarks.add(new StreamMark(currentStreamStartTime,
-					endTime, bufferSize));
+			/**
+			 * avoid duplicating mark
+			 */
+			if (!newInputStreamMarks.isEmpty()
+					&& bufferSize == newInputStreamMarks.get(newInputStreamMarks.size() - 1).endPos) {
+				return false;
+			}
+			newInputStreamMarks.add(new StreamMark(currentStreamStartTime, endTime, bufferSize));
+			return true;
 		}
+		return false;
 	}
 
 	/**
@@ -105,23 +116,25 @@ public class DynamicByteArrayInputStream extends
 	 * @param endTime
 	 *            the marking end stream end time.
 	 */
-	public synchronized void finish(boolean markFinish, Date endTime) {
-		addMarkPos(endTime);
+	public synchronized boolean finish(boolean markFinish, Date endTime) {
+		boolean success = addMarkPos(endTime);
 		if (!markFinish) {
 			this.isFinished = true;
 		}
 		if (blocking) {
 			this.notifyAll();
 		}
+		return success;
 	}
 
 	/**
 	 * Use current date time as the marking end stream's end time.
 	 * 
+	 * @return whether add mark successfully, duplicating adding will lead to a skip
 	 * @see #finish(boolean, Date)
 	 */
-	public synchronized void finish(boolean markFinish) {
-		finish(markFinish, new Date());
+	public synchronized boolean finish(boolean markFinish) {
+		return finish(markFinish, new Date());
 	}
 
 	/**
