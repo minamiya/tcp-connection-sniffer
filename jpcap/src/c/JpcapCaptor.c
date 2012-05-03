@@ -81,11 +81,13 @@ const int offset_data[]={4,14,-1,-1,-1,-1,22,-1,16,4,
 #endif
 			   8,0,24,24};
 
-#define get_network_type(data,id) ntohs(*(u_short *)(data+offset_type[linktypes[id]]))
+const int pppoe_offset=8;
 
-#define skip_datalink_header(data,id)  (data+offset_data[linktypes[id]])
+#define get_network_type(data,id,offset) ntohs(*(u_short *)(data+offset_type[linktypes[id]]+offset))
 
-#define datalink_hlen(id) offset_data[linktypes[id]]
+#define skip_datalink_header(data,id,offset)  (data+offset_data[linktypes[id]]+offset)
+
+#define datalink_hlen(id,offset) (offset_data[linktypes[id]]+offset)
 
 #define UNKNOWN_PROTO 0xffff
 
@@ -708,18 +710,28 @@ void get_packet(struct pcap_pkthdr header,u_char *data,jobject *packet,int id){
 
   JNIEnv *env=jni_envs[id];
 
+  short offset=0;
+
   // Analyze network protocol
   // patch from Kenta
   switch(linktypes[id]){
   case DLT_RAW:
     // based on the hack for Raw IP
     nproto=ETHERTYPE_IP;
-    clen-=datalink_hlen(id);
+	clen-=datalink_hlen(id,offset);
     break;
   case DLT_IEEE802:
   case DLT_EN10MB:
-    nproto=get_network_type(data,id);
-    clen-=datalink_hlen(id);
+	  nproto=get_network_type(data,id,offset);
+	  clen-=datalink_hlen(id,offset);
+	if(nproto==ETHERTYPE_PPPOE){
+		offset=pppoe_offset;
+		//after set the pppoe offset, retest the nproto and clen
+		nproto=get_network_type(data,id,offset);
+		if(nproto==ETHERTYPE_IP_PACKET)
+			nproto=ETHERTYPE_IP;
+		clen-=datalink_hlen(id,offset);
+	}
     break;
   default:
     // get_network_type() macro does NOT work for non-ether packets
@@ -732,10 +744,10 @@ void get_packet(struct pcap_pkthdr header,u_char *data,jobject *packet,int id){
   if(clen>0){
     switch(nproto){
     case ETHERTYPE_IP:
-      clen-=((struct ip *)skip_datalink_header(data,id))->ip_hl<<2;
+		clen-=((struct ip *)skip_datalink_header(data,id,offset))->ip_hl<<2;
       if(clen>0 &&
-	 !(ntohs(((struct ip *)skip_datalink_header(data,id))->ip_off)&IP_OFFMASK))
-	tproto=((struct ip *)skip_datalink_header(data,id))->ip_p;
+		  !(ntohs(((struct ip *)skip_datalink_header(data,id,offset))->ip_off)&IP_OFFMASK))
+		  tproto=((struct ip *)skip_datalink_header(data,id,offset))->ip_p;
       else
 	tproto=ETHERTYPE_IP;
       break;
@@ -743,7 +755,7 @@ void get_packet(struct pcap_pkthdr header,u_char *data,jobject *packet,int id){
     case ETHERTYPE_IPV6:
       clen-=40;
       if(clen>0){
-	u_char *dp=skip_datalink_header(data,id);
+		  u_char *dp=skip_datalink_header(data,id,offset);
 	struct ip6_ext *ip6_ext;
 
 	tproto=((struct ip6_hdr *)dp)->ip6_nxt;
@@ -787,7 +799,7 @@ void get_packet(struct pcap_pkthdr header,u_char *data,jobject *packet,int id){
       tproto = UNKNOWN_PROTO;
       break;
     default:
-      tproto=get_network_type(data,id);
+		tproto=get_network_type(data,id,offset);
     }
   }
 
@@ -837,7 +849,7 @@ void get_packet(struct pcap_pkthdr header,u_char *data,jobject *packet,int id){
   //printf("network:%d\n",nproto);
   /** Analyze Network**/
   if(nproto != UNKNOWN_PROTO)
-	data=skip_datalink_header(data,id);
+	  data=skip_datalink_header(data,id,offset);
   switch(nproto){
   case ETHERTYPE_IP:
     clen=ntohs(((struct ip *)data)->ip_len);
@@ -856,14 +868,14 @@ void get_packet(struct pcap_pkthdr header,u_char *data,jobject *packet,int id){
     hlen=0;
     break;
   default:
-    clen=header.caplen-datalink_hlen(id);
+	  clen=header.caplen-datalink_hlen(id,offset);
 	hlen=0;
     break;
   }
   if(nproto != UNKNOWN_PROTO &&
      tproto != UNKNOWN_PROTO &&
-     clen>header.caplen-datalink_hlen(id)) 
-    clen=header.caplen-datalink_hlen(id);
+	 clen>header.caplen-datalink_hlen(id,offset)) 
+	 clen=header.caplen-datalink_hlen(id,offset);
   data+=hlen;
   clen-=hlen;
 

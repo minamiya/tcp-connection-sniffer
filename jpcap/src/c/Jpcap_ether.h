@@ -1,5 +1,7 @@
 #define ETHERTYPE_PUP           0x0200  /* PUP protocol */
 #define ETHERTYPE_IP            0x0800  /* IP protocol */
+#define ETHERTYPE_IP_PACKET     0x0021  /* IP Packet */
+#define ETHERTYPE_PPPOE         0x8864  /* PPPOE protocol */
 #define ETHERTYPE_ARP           0x0806  /* Addr. resolution protocol */
 #define ETHERTYPE_REVARP        0x8035  /* reverse Addr. resolution protocol */
 #define ETHERTYPE_VLAN          0x8100  /* IEEE 802.1Q VLAN tagging */
