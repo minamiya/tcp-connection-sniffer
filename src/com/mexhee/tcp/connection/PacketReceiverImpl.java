@@ -62,8 +62,11 @@ public class PacketReceiverImpl implements PacketReceiver {
 			logger.info("old packet seq " + tcpPacket);
 			return;
 		}
-
-		if (connection.isFinished()) {
+		/*
+		 * if both side sent FIN packets, but the connection hasn't removed from
+		 * buffer, it only means it is waiting for the last ack packet
+		 */
+		if (connection.isFinished() && connection.getState() != TCPConnectionState.LastAck) {
 			return;
 		}
 		if (tcpPacket.isHandsShake2Packet()) {
@@ -77,7 +80,11 @@ public class PacketReceiverImpl implements PacketReceiver {
 			}
 			return;
 		}
-		if (connection.isMatchSequence(tcpPacket)) {
+		/**
+		 * check whether current packet could be processed at current stage, if
+		 * yes, process it, otherwise, put it to buffer
+		 */
+		if (connection.isCanProcessPacket(tcpPacket)) {
 			handlePacket(tcpPacket, connection);
 		} else {
 			if (tcpPacket.isSentByClient()) {
@@ -85,11 +92,19 @@ public class PacketReceiverImpl implements PacketReceiver {
 			} else {
 				connection.getPacketsBuffer().addToSCTemporaryStoredDataPackets(tcpPacket);
 			}
-			TCPPacket bufferedPacket = null;
-			while ((bufferedPacket = connection.getPacketsBuffer().pickupPacket(connection.getSequenceNumCounter(),
-					connection)) != null) {
-				handlePacket(bufferedPacket, connection);
-			}
+			tryToProcessPacketsInBuffer(connection);
+		}
+	}
+
+	/**
+	 * try to pick up those
+	 * "could continue process according to sequence number" packets, and put it
+	 * to connection instance to process
+	 */
+	private void tryToProcessPacketsInBuffer(TCPConnection connection) throws IOException {
+		TCPPacket bufferedPacket = null;
+		while ((bufferedPacket = connection.getPacketsBuffer().pickupPacket()) != null) {
+			handlePacket(bufferedPacket, connection);
 		}
 	}
 
@@ -105,10 +120,9 @@ public class PacketReceiverImpl implements PacketReceiver {
 		}
 		if (tcpPacket.isFinish()) {
 			connection.processFinishPacket(tcpPacket);
+			tryToProcessPacketsInBuffer(connection);
 		}
-		// TODO: take a look those expired packet according to state, and
-		// sequence number
-		// TODO: update the tcp connection instance last update time
+		connection.updated();
 	}
 
 	/**

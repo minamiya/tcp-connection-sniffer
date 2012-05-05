@@ -1,5 +1,6 @@
 package com.mexhee.tcp.connection;
 
+import java.util.Iterator;
 import java.util.SortedSet;
 import java.util.TreeSet;
 
@@ -18,6 +19,12 @@ public class PacketsBuffer {
 	 */
 	SortedSet<TCPPacket> scTemporaryStoredPackets = new TreeSet<TCPPacket>();
 
+	private TCPConnection connection;
+
+	public PacketsBuffer(TCPConnection connection) {
+		this.connection = connection;
+	}
+
 	void addToCSTemporaryStoredDataPackets(TCPPacket packet) {
 		csTemporaryStoredPackets.add(packet);
 	}
@@ -26,46 +33,56 @@ public class PacketsBuffer {
 		scTemporaryStoredPackets.add(packet);
 	}
 
-	TCPPacket pickupPacket(SequenceCounter counter, TCPConnection connection) {
-		return pickupCSBuffer(counter, connection);
+	TCPPacket pickupPacket() {
+		TCPPacket packet = pickupCSBuffer();
+		if (packet != null) {
+			return packet;
+		} else {
+			return pickupSCBuffer();
+		}
 	}
 
-	private TCPPacket pickupCSBuffer(SequenceCounter counter, TCPConnection connection) {
+	boolean isStillHaveDataPacketsInCSBuffer() {
+		return hasDataPackets(csTemporaryStoredPackets);
+	}
+
+	boolean isStillHaveDataPacketsInSCBuffer() {
+		return hasDataPackets(scTemporaryStoredPackets);
+	}
+
+	private boolean hasDataPackets(SortedSet<TCPPacket> buffer) {
+		Iterator<TCPPacket> it = buffer.iterator();
+		while (it.hasNext()) {
+			if (it.next().isContainsData()) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	private TCPPacket pickupCSBuffer() {
 		if (!csTemporaryStoredPackets.isEmpty()) {
 			TCPPacket packet = csTemporaryStoredPackets.first();
-			if (connection.isMatchSequence(packet)) {
-				if (counter.clientCounter.ack == packet.getAckNum()) {
-					csTemporaryStoredPackets.remove(packet);
-					return packet;
-				} else {
-					/**
-					 * if ack number is not the same, it means there is a server
-					 * to client writting packet, so try to pickup
-					 * scTemporaryStoredDataPackets
-					 */
-					return pickupSCBuffer(counter, connection);
-				}
+			if (connection.isCanProcessPacket(packet)) {
+				csTemporaryStoredPackets.remove(packet);
+				return packet;
 			} else if (connection.isOldPacket(packet)) {
 				csTemporaryStoredPackets.remove(packet);
-				return pickupCSBuffer(counter, connection);
+				return pickupCSBuffer();
 			}
-		} else {
-			return pickupSCBuffer(counter, connection);
 		}
 		return null;
 	}
 
-	private TCPPacket pickupSCBuffer(SequenceCounter counter, TCPConnection connection) {
+	private TCPPacket pickupSCBuffer() {
 		if (!scTemporaryStoredPackets.isEmpty()) {
 			TCPPacket packet = scTemporaryStoredPackets.first();
-			if (connection.isMatchSequence(packet)) {
-				if (counter.serverCounter.ack == packet.getAckNum()) {
-					scTemporaryStoredPackets.remove(packet);
-					return packet;
-				}
+			if (connection.isCanProcessPacket(packet)) {
+				scTemporaryStoredPackets.remove(packet);
+				return packet;
 			} else if (connection.isOldPacket(packet)) {
 				scTemporaryStoredPackets.remove(packet);
-				return pickupSCBuffer(counter, connection);
+				return pickupSCBuffer();
 			}
 		}
 		return null;

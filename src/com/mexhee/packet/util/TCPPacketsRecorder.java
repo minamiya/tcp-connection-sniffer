@@ -15,7 +15,6 @@ import jpcap.NetworkInterface;
 import jpcap.packet.Packet;
 
 import com.mexhee.tcp.connection.ConnectionDetail;
-import com.mexhee.tcp.connection.PacketReceiver;
 import com.mexhee.tcp.connection.PacketReceiverImpl;
 import com.mexhee.tcp.connection.listener.ConnectionFilter;
 import com.mexhee.tcp.connection.listener.DefaultTCPConnectionSnifferListener;
@@ -111,7 +110,7 @@ public class TCPPacketsRecorder {
 	 */
 	public void start() throws IOException {
 		getCaptor().setJpcapFilter(filter.getJpcapFilter());
-		//TODO: after jpcapFilter function is ready, remove below code
+		// TODO: after jpcapFilter function is ready, remove below code
 		getCaptor().setFilter("tcp", true);
 		getCaptor().loopPacket(0, new DumpPacketReceiver());
 	}
@@ -151,10 +150,14 @@ public class TCPPacketsRecorder {
 		jpcap.packet.TCPPacket tcpPacket = null;
 		TCPConnectionSnifferListener snifferListener = new DefaultTCPConnectionSnifferListener(handler,
 				new ConnectionFilter());
-		PacketReceiver receiver = new PacketReceiverImpl(snifferListener);
+		PacketReceiverImpl receiver = new PacketReceiverImpl(snifferListener);
 		try {
 			while ((tcpPacket = (jpcap.packet.TCPPacket) ois.readObject()) != null) {
 				receiver.pick(new TCPPacketImpl(tcpPacket));
+			}
+			if (!receiver.getActiveConnections().isEmpty()) {
+				throw new RuntimeException("There are still " + receiver.getActiveConnections().size()
+						+ " connections that haven't been released");
 			}
 		} catch (EOFException e) {
 			// there will be EOFException at the end of stream reading, just

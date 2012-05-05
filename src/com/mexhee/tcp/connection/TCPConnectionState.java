@@ -71,4 +71,26 @@ public enum TCPConnectionState {
 	public boolean isGreaterThan(TCPConnectionState state) {
 		return this.seq > state.seq;
 	}
+
+	/**
+	 * whether current state sequence is equals or greater than the given one
+	 * 
+	 * @param state
+	 *            another state
+	 * @return current state sequence is greater than the given one
+	 */
+	public boolean isEqualsGreaterThan(TCPConnectionState state) {
+		return this.seq >= state.seq;
+	}
+
+	/**
+	 * whether current state sequence is less than the given one
+	 * 
+	 * @param state
+	 *            another state
+	 * @return current state sequence is greater than the given one
+	 */
+	public boolean isLessThan(TCPConnectionState state) {
+		return this.seq < state.seq;
+	}
 }

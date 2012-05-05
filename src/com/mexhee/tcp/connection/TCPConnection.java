@@ -28,10 +28,6 @@ public class TCPConnection {
 	// to record client & server side sequence & ack number
 	private SequenceCounter counter = new SequenceCounter();
 
-	// key is the ack number
-	// private Map<Long, TCPPacket> temporaryStoredDataPackets = new
-	// ConcurrentHashMap<Long, TCPPacket>(200);
-
 	private TCPConnectionState state;
 
 	private TCPConnectionStateListener stateListener;
@@ -45,7 +41,7 @@ public class TCPConnection {
 
 	private boolean maybeBroken = false;
 
-	private PacketsBuffer packetsBuffer = new PacketsBuffer();
+	private PacketsBuffer packetsBuffer = new PacketsBuffer(this);
 
 	public TCPConnection(ConnectionDetail connectionDetail, TCPConnectionStateListener stateListener) {
 		this.connectionDetail = connectionDetail;
@@ -170,16 +166,13 @@ public class TCPConnection {
 			processLastAckPacket(ackPacket);
 			break;
 		}
-		lastUpdated = new Date();
 	}
 
 	private void processFinishWait1AckPacket(TCPPacket ackPacket) {
 		if (ackPacket.isSentByClient()) {
 			counter.updateClientCounter(ackPacket);
-			counter.serverSequenceAddOne();
 		} else {
 			counter.updateServerCounter(ackPacket);
-			counter.clientSequenceAddOne();
 		}
 		state = TCPConnectionState.CloseWait;
 		stateListener.onCloseWait(this);
@@ -224,7 +217,11 @@ public class TCPConnection {
 		// do nothing
 	}
 
-	boolean isMatchSequence(TCPPacket packet) {
+	/**
+	 * check whether the packet sequence number is the same as the counter in
+	 * current instance
+	 */
+	private boolean isMatchSequence(TCPPacket packet) {
 		boolean isSentByClient = connectionDetail.isTheSame(packet.getConnectionDetail());
 		if (isSentByClient) {
 			return counter.isMatchClientSeq(packet);
@@ -233,23 +230,42 @@ public class TCPConnection {
 		}
 	}
 
-	// private boolean isSentByClient(TCPPacket packet,
-	// DismatchedSequenceNumberHandler handler) {
-	//
-	// /**
-	// * whether the checking is necessary, and packet's sequence hasn't been
-	// * applied to the Counter
-	// */
-	// if (handler.isEnableChecking() && !packet.isPacketConsumed()) {
-	//
-	// }
-	// return isSentByClient;
-	// }
+	/**
+	 * whether the packet can be handled in current stage according to those
+	 * sequence number, ack number and those connection state
+	 */
+	boolean isCanProcessPacket(TCPPacket tcpPacket) {
+		/**
+		 * A least, all those packets should be match the sequence number, then
+		 * it could be processed
+		 */
+		boolean canProcess = isMatchSequence(tcpPacket);
 
-	// private boolean isSentByClient(TCPPacket packet) {
-	// return isSentByClient(packet, new
-	// LoggingDismatchedSequenceNumberHandler());
-	// }
+		if (canProcess) {
+			if (tcpPacket.isContainsData() || tcpPacket.isRest() || tcpPacket.isFinish()) {
+				if (tcpPacket.isSentByClient()) {
+					/**
+					 * <pre>
+					 * 1. if ack number is not the same, usually it means there  is a server to client writing packet, so cannot process
+					 * 2. but if it is just the writing direction changing, then, the ack number won't be the same, 
+					 * 	  but the ack should be the same as the other side's seq
+					 * </pre>
+					 */
+					return (tcpPacket.getAckNum() == counter.clientCounter.ack || tcpPacket.getAckNum() == counter.serverCounter.seq);
+				} else {
+					/**
+					 * <pre>
+					 * 1. if ack number is not the same, usually it means there  is a client to server writing packet, so cannot process
+					 * 2. but if it is just the writing direction changing, then, the ack number won't be the same, 
+					 * 	  but the ack should be the same as the other side's seq
+					 * </pre>
+					 */
+					return (tcpPacket.getAckNum() == counter.serverCounter.ack || tcpPacket.getAckNum() == counter.clientCounter.seq);
+				}
+			}
+		}
+		return canProcess;
+	}
 
 	protected void processDataPacket(TCPPacket dataPacket) throws IOException {
 		if (dataPacket.isSentByClient()) {
@@ -264,7 +280,7 @@ public class TCPConnection {
 	 * {@link #serverInputStream}
 	 */
 	private void processSCDataPacket(TCPPacket dataPacket) throws IOException {
-		if (counter.serverCounter.ack == counter.clientCounter.seq) {
+		if (counter.clientCounter.ack == dataPacket.getSequence()) {
 			if (clientInputStream.finish(true)) {
 				clientInputStream.markStreamStartTime(new Date(counter.clientCounter.latestPacketUpdateTime));
 			}
@@ -284,7 +300,7 @@ public class TCPConnection {
 	 * {@link #clientInputStream}
 	 */
 	private void processCSDataPacket(TCPPacket dataPacket) throws IOException {
-		if (counter.clientCounter.ack == counter.serverCounter.seq) {
+		if (counter.serverCounter.ack == dataPacket.getSequence()) {
 			if (serverInputStream.finish(true)) {
 				serverInputStream.markStreamStartTime(new Date(counter.serverCounter.latestPacketUpdateTime));
 			}
@@ -304,23 +320,27 @@ public class TCPConnection {
 			clientInputStream.finish(false);
 			updateConnectionStateAfterReceivedFinishPacket(tcpPacket);
 			counter.updateClientCounter(tcpPacket);
+			counter.clientSequenceAddOne();
 		} else {
 			serverInputStream.finish(false);
 			updateConnectionStateAfterReceivedFinishPacket(tcpPacket);
 			counter.updateServerCounter(tcpPacket);
+			counter.serverSequenceAddOne();
 		}
-		validatePacketsInBuffer();
+		validateDataPacketsInBuffer();
 	}
 
-	private void validatePacketsInBuffer() throws IOException {
+	private void validateDataPacketsInBuffer() {
 		// verify there is no left data packet in the cache
-		if (clientInputStream.isFinished() && packetsBuffer.csTemporaryStoredPackets.size() > 0) {
-			throw new IOException("There are stil " + packetsBuffer.csTemporaryStoredPackets.size()
-					+ " client to server packets that haven't been consumed!");
+		if (clientInputStream.isFinished() && packetsBuffer.isStillHaveDataPacketsInCSBuffer()) {
+			logger.warn("There are stil some client to server data packets that haven't been consumed! total packets in buffer "
+					+ packetsBuffer.csTemporaryStoredPackets.size());
+			maybeBroken = true;
 		}
-		if (serverInputStream.isFinished() && packetsBuffer.scTemporaryStoredPackets.size() > 0) {
-			logger.warn("There are stil " + packetsBuffer.scTemporaryStoredPackets.size()
-					+ " server to client packets that haven't been consumed!");
+		if (serverInputStream.isFinished() && packetsBuffer.isStillHaveDataPacketsInSCBuffer()) {
+			logger.warn("There are stil some server to client data packets that haven't been consumed! total packets in buffer "
+					+ packetsBuffer.scTemporaryStoredPackets.size());
+			maybeBroken = true;
 		}
 	}
 
@@ -341,6 +361,7 @@ public class TCPConnection {
 		if (!serverInputStream.isFinished()) {
 			serverInputStream.finish(false);
 		}
+		validateDataPacketsInBuffer();
 		stateListener.onClosed(this);
 	}
 
@@ -397,6 +418,13 @@ public class TCPConnection {
 	}
 
 	/**
+	 * used to update the {@link #lastUpdated} time from external
+	 */
+	void updated() {
+		this.lastUpdated = new Date();
+	}
+
+	/**
 	 * whether fin packet is sent and sent by client side.
 	 * 
 	 * @return true when the fin packet is detected in current tcp connection
@@ -431,88 +459,4 @@ public class TCPConnection {
 		stateListener.onClosed(this);
 		state = TCPConnectionState.Closed;
 	}
-
-	// private class LoggingDismatchedSequenceNumberHandler implements
-	// DismatchedSequenceNumberHandler {
-	// @Override
-	// public boolean isEnableChecking() {
-	// return true;
-	// }
-	//
-	// @Override
-	// public void dismatchedSequenceNumber(boolean isSentByClient, TCPPacket
-	// packet) {
-	// if (logger.isInfoEnabled()) {
-	// if (isSentByClient) {
-	// logger.info(packet.toString() + " doesn't match client seq number " +
-	// state
-	// + ", current client seq " + counter.clientSeq);
-	// } else {
-	// logger.info(packet.toString() + " doesn't match server seq number " +
-	// state
-	// + ", current server seq " + counter.serverSeq);
-	// }
-	// }
-	// }
-	//
-	// }
-	//
-	// protected PacketsBuffer getPacketsBuffer() {
-	// return this.packetsBuffer;
-	// }
-	//
-	// private class DisableSequenceNumberCheckingHandler implements
-	// DismatchedSequenceNumberHandler {
-	// @Override
-	// public boolean isEnableChecking() {
-	// return false;
-	// }
-	//
-	// @Override
-	// public void dismatchedSequenceNumber(boolean isSentByClient, TCPPacket
-	// packet) {
-	// throw new IllegalAccessError("disabled checking");
-	// }
-	// }
-	//
-	// private class StoreToBufferDismatchedSequenceNumberHandler extends
-	// LoggingDismatchedSequenceNumberHandler {
-	// @Override
-	// public boolean isEnableChecking() {
-	// return true;
-	// }
-	//
-	// @Override
-	// public void dismatchedSequenceNumber(boolean isSentByClient, TCPPacket
-	// packet) {
-	// super.dismatchedSequenceNumber(isSentByClient, packet);
-	// if (isSentByClient) {
-	// csTemporaryStoredDataPackets.add(packet);
-	// } else {
-	// scTemporaryStoredDataPackets.add(packet);
-	// }
-	// if (logger.isInfoEnabled())
-	// logger.info("added " + packet +
-	// " into buffer due to mismatching sequence number");
-	// /**
-	// * need throw this exception to break the continue handling of this
-	// * packet, just need add into buffer
-	// */
-	// throw new DismatchedSequenceNumberException(isSentByClient);
-	// }
-	//
-	// }
-	//
-	// private class DismatchedSequenceNumberException extends RuntimeException
-	// {
-	//
-	// private static final long serialVersionUID = 7240762499196328405L;
-	//
-	// private boolean isSentByClient;
-	//
-	// DismatchedSequenceNumberException(boolean isSentByClient) {
-	// this.isSentByClient = isSentByClient;
-	// }
-	// }
-
 }

@@ -16,7 +16,7 @@ public class TCPPacketsRecorderTest {
 
 	@BeforeClass
 	public static void setup() {
-		dumpFolder = new File("test/dump1").getAbsolutePath();
+		dumpFolder = new File("test/dump").getAbsolutePath();
 		System.out.println(dumpFolder);
 	}
 	
@@ -26,13 +26,14 @@ public class TCPPacketsRecorderTest {
 		TCPPacketsRecorder recorder = new TCPPacketsRecorder(filter, JpcapCaptor.getDeviceList()[2], dumpFolder);
 		recorder.start();
 	}
-	@Test
-	public void testRunAppFromDumpFile() throws IOException, ClassNotFoundException {
-		TCPPacketsRecorder.open(dumpFolder + "/192.168.1.100(5770)-121.14.1.20(80)_1335859346726.dump",
+	
+	public void testRunAppFromDumpFile() throws Exception {
+		TCPPacketsRecorder.open(dumpFolder + "/192.168.1.100(5715)-58.63.236.236(80)_1335859343527.dump",
 				new ViewTCPConnection());
+		Thread.sleep(1000);
 	}
 
-	
+	@Test
 	public void testRunAppFromDumpFolder() throws IOException, ClassNotFoundException {
 		TCPPacketsRecorder.scan(dumpFolder, new ViewTCPConnection());
 	}

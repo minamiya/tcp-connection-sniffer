@@ -35,6 +35,14 @@ public class ObsoleteConnectionCleaner implements Runnable {
 	 */
 	public static final int BROKEN_TIMEOUT = 20 * 1000;
 
+	/**
+	 * those half handshake connections timeout, such as client sends a SYN
+	 * packet out, but server has no corresponding service, so there won't be
+	 * any response
+	 * 
+	 */
+	public static final int HALF_HANDSHAKE_TIMEOUT = 20 * 1000;
+
 	public ObsoleteConnectionCleaner(PacketReceiverImpl receiver, TCPConnectionStateListener stateListener) {
 		this.receiver = receiver;
 		this.stateListener = stateListener;
@@ -51,6 +59,8 @@ public class ObsoleteConnectionCleaner implements Runnable {
 					} else if (connection.getState().isGreaterThan(TCPConnectionState.Established)
 							&& duration >= HALF_CLOSED_TIMEOUT) {
 						connection.close();
+					} else if (connection.getState().isLessThan(TCPConnectionState.Established)) {
+						connectionTimeout(connection);
 					} else if (duration >= TCP_CONNECTION_TIME_OUT) {
 						connectionTimeout(connection);
 					}
@@ -69,7 +79,7 @@ public class ObsoleteConnectionCleaner implements Runnable {
 
 	private void connectionTimeout(TCPConnection connection) {
 		stateListener.onTimeoutDetected(connection);
-		if (logger.isInfoEnabled())
+		if (logger.isInfoEnabled() && connection.getState().isEqualsGreaterThan(TCPConnectionState.Established))
 			logger.info(connection.toString() + " has been timeout");
 	}
 
