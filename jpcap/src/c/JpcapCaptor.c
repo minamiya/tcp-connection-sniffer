@@ -723,7 +723,6 @@ void get_packet(struct pcap_pkthdr header,u_char *data,jobject *packet,int id){
   case DLT_IEEE802:
   case DLT_EN10MB:
 	  nproto=get_network_type(data,id,offset);
-	  clen-=datalink_hlen(id,offset);
 	if(nproto==ETHERTYPE_PPPOE){
 		offset=pppoe_offset;
 		//after set the pppoe offset, retest the nproto and clen
@@ -731,6 +730,9 @@ void get_packet(struct pcap_pkthdr header,u_char *data,jobject *packet,int id){
 		if(nproto==ETHERTYPE_IP_PACKET)
 			nproto=ETHERTYPE_IP;
 		clen-=datalink_hlen(id,offset);
+	}else
+	{
+		 clen-=datalink_hlen(id,offset);
 	}
     break;
   default:
