@@ -41,7 +41,7 @@ public class ObsoleteConnectionCleaner implements Runnable {
 	 * any response
 	 * 
 	 */
-	public static final int HALF_HANDSHAKE_TIMEOUT = 20 * 1000;
+	public static final int HALF_HANDSHAKE_TIMEOUT = 10 * 1000;
 
 	public ObsoleteConnectionCleaner(PacketReceiverImpl receiver, TCPConnectionStateListener stateListener) {
 		this.receiver = receiver;

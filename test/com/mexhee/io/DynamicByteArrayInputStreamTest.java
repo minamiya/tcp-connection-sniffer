@@ -46,8 +46,8 @@ public class DynamicByteArrayInputStreamTest {
 		stream.append("\n".getBytes());
 		stream.append("My name is beam".getBytes());
 		printContent("\nMy name is beam", stream);
-		stream.reset();
-		
+		stream.closeWholeStream();
+
 		Assert.assertEquals("HelloWorld!!\nMy name is beam", sb.toString());
 	}
 
@@ -55,18 +55,18 @@ public class DynamicByteArrayInputStreamTest {
 	public void testSkipCurrentInputStreamWillRollToNextStreamAutomatically() throws Exception {
 		DynamicByteArrayInputStream stream = createInputStreamWithoutFinishedFlag();
 		printContent("Hello", stream);
-		stream.skipCurrentInputStream();
+		stream.finishCurrentInputStream();
 		stream.assertNewInputStream();
 		printContent("World", stream);
-		stream.skipCurrentInputStream();
+		stream.finishCurrentInputStream();
 		stream.assertNewInputStream();
 		printContent("!!", stream);
-		stream.skipCurrentInputStream();
+		stream.finishCurrentInputStream();
 		stream.append("\n".getBytes());
 		stream.append("My name is beam".getBytes());
 		printContent("\nMy name is beam", stream);
-		stream.reset();
-		
+		stream.closeWholeStream();
+
 		Assert.assertEquals("HelloWorld!!\nMy name is beam", sb.toString());
 	}
 
@@ -97,13 +97,43 @@ public class DynamicByteArrayInputStreamTest {
 		Assert.assertEquals("HelloWorld!!", sb.toString());
 	}
 
+	@Test
+	public void testSupportMarkFinishMultiTimes() throws IOException {
+		DynamicByteArrayInputStream stream = new DynamicByteArrayInputStream();
+		String string = "Hello Wrold";
+		stream.append(string.getBytes());
+		Assert.assertTrue(stream.finish(false));
+		Assert.assertFalse(stream.finish(false));
+		stream.closeWholeStream();
+	}
+
+	@Test
+	public void testMarkSupport() throws Exception {
+		DynamicByteArrayInputStream stream = createInputStreamWithoutFinishedFlag();
+		stream.mark(4);
+		// read two bytes
+		stream.read();
+		stream.read();
+		stream.append("\nnew content".getBytes());
+		// reset current stream
+		stream.reset();
+		while (stream.hasMoreInputStream()) {
+			printContent(null, stream);
+			stream.finishCurrentInputStream();
+		}
+		stream.closeWholeStream();
+		Assert.assertEquals("HelloWorld!!\nnew content", sb.toString());
+	}
+
 	private void printContent(String content, TimeMeasurableCombinedInputStream stream) throws IOException {
 		byte[] buf = new byte[100];
 		int len = stream.read(buf);
-		if (len != content.length()) {
-			throw new RuntimeException("Failed");
+		if (content != null && content.length() > 0) {
+			if (len != content.length()) {
+				throw new RuntimeException("Failed");
+			}
+			Assert.assertEquals(content, new String(buf, 0, len));
 		}
-		Assert.assertEquals(content, new String(buf, 0, len));
 		print(new String(buf, 0, len));
 	}
 

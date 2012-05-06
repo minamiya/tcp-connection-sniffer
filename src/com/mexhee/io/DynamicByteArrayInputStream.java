@@ -31,8 +31,7 @@ import java.util.List;
  * </pre>
  * 
  */
-public class DynamicByteArrayInputStream extends
-		TimeMeasurableCombinedInputStream {
+public class DynamicByteArrayInputStream extends TimeMeasurableCombinedInputStream {
 
 	private byte[] buf;
 	// current stream cursor position
@@ -48,8 +47,15 @@ public class DynamicByteArrayInputStream extends
 
 	private List<StreamMark> newInputStreamMarks = new ArrayList<StreamMark>();
 
-	private final static int READ_TIMEOUT = 30000;
+	private final static int READ_TIMEOUT = 3000;
 	private final static int MAX_BUFFER_SIZE = 2000 * 1024;
+
+	/*
+	 * used to support mark & rest action in input stream, if current read
+	 * exceed readLimit, then we needn't keep the buffer
+	 */
+	private int readLimit = -1;
+	private int markedPos = -1;
 
 	/**
 	 * initialize with data in buff
@@ -130,7 +136,8 @@ public class DynamicByteArrayInputStream extends
 	/**
 	 * Use current date time as the marking end stream's end time.
 	 * 
-	 * @return whether add mark successfully, duplicating adding will lead to a skip
+	 * @return whether add mark successfully, duplicating adding will lead to a
+	 *         skip
 	 * @see #finish(boolean, Date)
 	 */
 	public synchronized boolean finish(boolean markFinish) {
@@ -148,16 +155,42 @@ public class DynamicByteArrayInputStream extends
 	}
 
 	/**
-	 * reset all data in this stream, clean buffer, set cursor to 0, and set
+	 * clear all data in this stream, clean buffer, set cursor to 0, and set
 	 * isFinished flag to false
 	 */
-	public synchronized void reset() {
+	public synchronized void closeWholeStream() {
 		this.buf = null;
 		this.pos = 0;
 		this.count = 0;
 		this.isFinished = false;
 		this.newInputStreamMarks.clear();
 		this.bufferSize = 0;
+	}
+
+	/**
+	 * close the current input stream, it is the same behavior with
+	 * {@link #finishCurrentInputStream()}
+	 */
+	@Override
+	public void close() {
+		finishCurrentInputStream();
+	}
+
+	@Override
+	public synchronized void reset() throws IOException {
+		if (this.markedPos == -1) {
+			throw new IOException("cannot reset due to the connect has been finished or no marker.");
+		}
+		this.pos = this.markedPos;
+		this.markedPos = -1;
+	}
+
+	@Override
+	public synchronized void mark(int readlimit) {
+		if (readlimit > 0) {
+			this.readLimit = readlimit;
+			this.markedPos = this.pos;
+		}
 	}
 
 	@Override
@@ -190,17 +223,47 @@ public class DynamicByteArrayInputStream extends
 	 *             if {@link #isFinished} is true BufferFullException if adding
 	 *             this data into buffer will exceed {@link #capacity()} size
 	 */
-	public synchronized void append(byte[] newBytes)
-			throws AlreadyFinishedStreamException, BufferFullException {
+	public synchronized void append(byte[] newBytes) throws AlreadyFinishedStreamException, BufferFullException {
 		if (isFinished) {
-			throw new AlreadyFinishedStreamException(
-					"stream is already finished!");
+			throw new AlreadyFinishedStreamException("stream is already finished!");
 		}
+		if (markedPos >= 0 && pos - markedPos <= readLimit) {
+			appendOnly(newBytes);
+		} else {
+			appendAndShrink(newBytes);
+		}
+		this.notifyAll();
+	}
+
+	/*
+	 * due to support mark in current stream, cannot clear the buffer, so just
+	 * append it
+	 */
+	private void appendOnly(byte[] newBytes) throws BufferFullException {
+		int newSize = this.bufferSize + newBytes.length;
+		if (newSize > MAX_BUFFER_SIZE) {
+			throw new BufferFullException(this.toString() + " is full, capacity is " + (MAX_BUFFER_SIZE / 1024) + "k");
+		}
+		byte[] b = new byte[newSize];
+		if (bufferSize > 0) {
+			System.arraycopy(buf, 0, b, 0, bufferSize);
+		}
+		System.arraycopy(newBytes, 0, b, bufferSize, newBytes.length);
+		this.buf = b;
+		this.bufferSize = newSize;
+		if (this.count == 0 || this.newInputStreamMarks.size() == 0) {
+			this.count = this.bufferSize;
+		}
+	}
+
+	/*
+	 * append buffer and shrink the buffer
+	 */
+	private void appendAndShrink(byte[] newBytes) throws BufferFullException {
 		int available = this.bufferSize - this.pos;
 		int newSize = available + newBytes.length;
 		if (newSize > MAX_BUFFER_SIZE) {
-			throw new BufferFullException(this.toString()
-					+ " is full, capacity is " + (MAX_BUFFER_SIZE / 1024) + "k");
+			throw new BufferFullException(this.toString() + " is full, capacity is " + (MAX_BUFFER_SIZE / 1024) + "k");
 		}
 		/*
 		 * removed pos bytes data, so the count and newInputStreamMarks should
@@ -223,24 +286,20 @@ public class DynamicByteArrayInputStream extends
 		if (this.count == 0 || this.newInputStreamMarks.size() == 0) {
 			this.count = this.bufferSize;
 		}
-		this.notifyAll();
 	}
 
 	private void moveForwardMarks(int pos) {
 		for (int i = 0; i < newInputStreamMarks.size(); i++) {
-			newInputStreamMarks.set(i, newInputStreamMarks.get(i)
-					.moveEndPosForward(pos));
+			newInputStreamMarks.set(i, newInputStreamMarks.get(i).moveEndPosForward(pos));
 		}
 		if (!newInputStreamMarks.isEmpty()
-				&& newInputStreamMarks.get(newInputStreamMarks.size() - 1)
-						.getEndPos() > this.bufferSize) {
+				&& newInputStreamMarks.get(newInputStreamMarks.size() - 1).getEndPos() > this.bufferSize) {
 			throw new IndexOutOfBoundsException();
 		}
 	}
 
 	private boolean isCurrentStreamFinished() {
-		if (newInputStreamMarks.size() > 0
-				&& this.pos >= newInputStreamMarks.get(0).getEndPos()) {
+		if (newInputStreamMarks.size() > 0 && this.pos >= newInputStreamMarks.get(0).getEndPos()) {
 			shrinkToNextInputStream();
 			return true;
 		}
@@ -277,16 +336,19 @@ public class DynamicByteArrayInputStream extends
 
 	@Override
 	public synchronized boolean hasMoreInputStream() {
-		return this.newInputStreamMarks.size() > 0 || !isFinished();
+		return this.newInputStreamMarks.size() > 0 || this.pos < this.bufferSize;
 	}
 
 	@Override
-	public synchronized void skipCurrentInputStream() {
+	public synchronized void finishCurrentInputStream() {
 		this.pos = this.count;
 		shrinkToNextInputStream();
 	}
 
 	private synchronized void shrinkToNextInputStream() {
+		if (newInputStreamMarks.isEmpty()) {
+			return;
+		}
 		int newSize = this.bufferSize - this.pos;
 		byte[] b = new byte[newSize];
 		System.arraycopy(buf, pos, b, 0, newSize);
@@ -295,9 +357,10 @@ public class DynamicByteArrayInputStream extends
 		this.bufferSize = this.buf.length;
 		newInputStreamMarks.remove(0);
 		moveForwardMarks(pos);
-		this.count = this.newInputStreamMarks.size() > 0 ? this.newInputStreamMarks
-				.get(0).getEndPos() : this.bufferSize;
+		this.count = this.newInputStreamMarks.size() > 0 ? this.newInputStreamMarks.get(0).getEndPos()
+				: this.bufferSize;
 		this.pos = 0;
+		this.markedPos = -1;
 	}
 
 	/**
@@ -309,8 +372,7 @@ public class DynamicByteArrayInputStream extends
 	public synchronized int read(byte b[], int off, int len) {
 		if (b == null) {
 			throw new NullPointerException();
-		} else if ((off < 0) || (off > b.length) || (len < 0)
-				|| ((off + len) > b.length) || ((off + len) < 0)) {
+		} else if ((off < 0) || (off > b.length) || (len < 0) || ((off + len) > b.length) || ((off + len) < 0)) {
 			throw new IndexOutOfBoundsException();
 		}
 		if (pos >= count) {
@@ -341,11 +403,11 @@ public class DynamicByteArrayInputStream extends
 	}
 
 	/**
-	 * whether is the mark supported, always false
+	 * whether is the mark supported, it is true
 	 */
 	@Override
 	public boolean markSupported() {
-		return false;
+		return true;
 	}
 
 	/**

@@ -40,10 +40,11 @@ public abstract class TimeMeasurableCombinedInputStream extends InputStream {
 	public abstract boolean hasMoreInputStream();
 
 	/**
-	 * skip all the left data in current stream, jump to the beginning of next
-	 * input stream directly if there is.
+	 * mark finish current stream and skip all the left data in current stream
+	 * if there is , also release the buffer for current stream, at last, jump
+	 * to the beginning of next input stream directly if there is.
 	 */
-	public abstract void skipCurrentInputStream();
+	public abstract void finishCurrentInputStream();
 
 	/**
 	 * get the time when the current input stream is beginning
@@ -60,4 +61,5 @@ public abstract class TimeMeasurableCombinedInputStream extends InputStream {
 	 */
 
 	public abstract Date getCurrentInputStreamEndTime();
+
 }

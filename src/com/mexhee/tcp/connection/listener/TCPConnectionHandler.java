@@ -4,5 +4,9 @@ import com.mexhee.tcp.connection.TCPConnection;
 
 public interface TCPConnectionHandler {
 
-	public void processConnection(TCPConnection connection);
+	public void onEstablished(final TCPConnection connection);
+
+	public void onClosed(final TCPConnection connection);
+	
+	public TCPConnectionStreamCallback getTcpConnectionStreamCallback();
 }

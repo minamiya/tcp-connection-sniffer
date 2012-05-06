@@ -10,18 +10,33 @@ import sun.net.www.MessageHeader;
 
 import com.mexhee.io.TimeMeasurableCombinedInputStream;
 import com.mexhee.tcp.connection.listener.TCPConnectionHandler;
+import com.mexhee.tcp.connection.listener.TCPConnectionStreamCallback;
 
-public class ViewTCPConnection implements TCPConnectionHandler {
+public class ViewTCPConnection implements TCPConnectionHandler, TCPConnectionStreamCallback {
 
 	@Override
-	public void processConnection(TCPConnection connection) {
+	public void onWriting(boolean isClientWriting, TCPConnection connection) {
 		TimeMeasurableCombinedInputStream clientInputStream = connection.getClientInputStream();
 		TimeMeasurableCombinedInputStream serverInputStream = connection.getServerInputStream();
 		while (clientInputStream.hasMoreInputStream() || serverInputStream.hasMoreInputStream()) {
-			outputClient(clientInputStream);
-			outputClient(serverInputStream);
+			if (isClientWriting) {
+				outputClient(clientInputStream);
+				outputClient(serverInputStream);
+			} else {
+				outputClient(serverInputStream);
+				outputClient(clientInputStream);
+			}
 		}
+		connection.registerWritingCallback(this);
+	}
 
+	@Override
+	public void onEstablished(TCPConnection connection) {
+		connection.registerWritingCallback(this);
+	}
+
+	@Override
+	public void onClosed(TCPConnection connection) {
 	}
 
 	private void outputServer(TimeMeasurableCombinedInputStream stream) {
@@ -45,11 +60,17 @@ public class ViewTCPConnection implements TCPConnectionHandler {
 		int size = 0;
 		try {
 			while ((size = stream.read(buffer)) > 0) {
-//				System.out.print(new String(buffer, 0, size));
+				// System.out.print(new String(buffer, 0, size));
 			}
 		} catch (IOException e) {
 			e.printStackTrace();
 		}
 		System.out.println();
 	}
+
+	@Override
+	public TCPConnectionStreamCallback getTcpConnectionStreamCallback() {
+		return this;
+	}
+
 }

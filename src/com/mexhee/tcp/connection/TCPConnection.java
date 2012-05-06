@@ -1,7 +1,9 @@
 package com.mexhee.tcp.connection;
 
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.Date;
+import java.util.List;
 
 import org.apache.log4j.Logger;
 
@@ -9,6 +11,7 @@ import com.mexhee.io.DynamicByteArrayInputStream;
 import com.mexhee.io.TimeMeasurableCombinedInputStream;
 import com.mexhee.tcp.connection.SequenceCounter.Counter;
 import com.mexhee.tcp.connection.listener.TCPConnectionStateListener;
+import com.mexhee.tcp.connection.listener.TCPConnectionStreamCallback;
 import com.mexhee.tcp.packet.TCPPacket;
 
 /**
@@ -42,6 +45,12 @@ public class TCPConnection {
 	private boolean maybeBroken = false;
 
 	private PacketsBuffer packetsBuffer = new PacketsBuffer(this);
+	/*
+	 * always will be one element in this collection, why need a collection? to
+	 * avoid NPE at invokeStreamCallback() method, need keep a local reference
+	 * before the callbak is really invoked in another thread
+	 */
+	private List<TCPConnectionStreamCallback> streamCallbacks = new ArrayList<TCPConnectionStreamCallback>();
 
 	public TCPConnection(ConnectionDetail connectionDetail, TCPConnectionStateListener stateListener) {
 		this.connectionDetail = connectionDetail;
@@ -283,6 +292,7 @@ public class TCPConnection {
 		if (counter.clientCounter.ack == dataPacket.getSequence()) {
 			if (clientInputStream.finish(true)) {
 				clientInputStream.markStreamStartTime(new Date(counter.clientCounter.latestPacketUpdateTime));
+				invokeStreamCallback(true);
 			}
 		}
 		/**
@@ -290,6 +300,7 @@ public class TCPConnection {
 		 */
 		if (counter.serverCounter.seq == 0) {
 			serverInputStream.markStreamStartTime(dataPacket.getPacketCaptureTime());
+			invokeStreamCallback(false);
 		}
 		serverInputStream.append(dataPacket.getData());
 		counter.updateServerCounter(dataPacket);
@@ -303,6 +314,7 @@ public class TCPConnection {
 		if (counter.serverCounter.ack == dataPacket.getSequence()) {
 			if (serverInputStream.finish(true)) {
 				serverInputStream.markStreamStartTime(new Date(counter.serverCounter.latestPacketUpdateTime));
+				invokeStreamCallback(false);
 			}
 		}
 		/**
@@ -310,6 +322,7 @@ public class TCPConnection {
 		 */
 		if (counter.clientCounter.seq == 0) {
 			clientInputStream.markStreamStartTime(dataPacket.getPacketCaptureTime());
+			invokeStreamCallback(true);
 		}
 		clientInputStream.append(dataPacket.getData());
 		counter.updateClientCounter(dataPacket);
@@ -458,5 +471,34 @@ public class TCPConnection {
 		// clearBufferedSCDataPacket();
 		stateListener.onClosed(this);
 		state = TCPConnectionState.Closed;
+	}
+
+	private synchronized void invokeStreamCallback(final boolean isClientWriting) {
+		if (!streamCallbacks.isEmpty()) {
+			final TCPConnection conn = this;
+			final TCPConnectionStreamCallback callback = streamCallbacks.get(0);
+			GlobalThreadPool.executor.execute(new Runnable() {
+				@Override
+				public void run() {
+					callback.onWriting(isClientWriting, conn);
+				}
+			});
+			this.streamCallbacks.clear();
+		}
+	}
+
+	/**
+	 * this callback is used to be invoked when there is a streaming event, such
+	 * as client/server is starting to write, it will be removed when the class
+	 * is invoked, so after finishing all the streams in this tcp connection,
+	 * the outside invoker should register the callback again
+	 * 
+	 * @param callback
+	 *            a class used to handle the stream
+	 */
+	public synchronized void registerWritingCallback(TCPConnectionStreamCallback callback) {
+		if (streamCallbacks.isEmpty()) {
+			streamCallbacks.add(callback);
+		}
 	}
 }

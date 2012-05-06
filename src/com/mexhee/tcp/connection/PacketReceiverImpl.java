@@ -14,7 +14,7 @@ import com.mexhee.tcp.packet.TCPPacket;
  * A implementation of {@link PacketReceiver}.
  */
 public class PacketReceiverImpl implements PacketReceiver {
-
+	
 	private static final Logger logger = Logger.getLogger(PacketReceiverImpl.class);
 
 	private Map<ConnectionDetail, TCPConnection> activeConnections = new ConcurrentHashMap<ConnectionDetail, TCPConnection>();

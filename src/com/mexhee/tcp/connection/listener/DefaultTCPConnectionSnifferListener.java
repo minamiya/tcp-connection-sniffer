@@ -1,19 +1,14 @@
 package com.mexhee.tcp.connection.listener;
 
-import java.util.concurrent.ArrayBlockingQueue;
-import java.util.concurrent.ThreadPoolExecutor;
-import java.util.concurrent.TimeUnit;
-
 import org.apache.log4j.Logger;
 
 import com.mexhee.tcp.connection.ConnectionDetail;
+import com.mexhee.tcp.connection.GlobalThreadPool;
 import com.mexhee.tcp.connection.PacketReceiverImpl;
 import com.mexhee.tcp.connection.TCPConnection;
 
 public class DefaultTCPConnectionSnifferListener implements TCPConnectionSnifferListener {
 
-	private static ThreadPoolExecutor executor = new ThreadPoolExecutor(0, 100, 60, TimeUnit.SECONDS,
-			new ArrayBlockingQueue<Runnable>(20), new ThreadPoolExecutor.CallerRunsPolicy());
 	private static final Logger logger = Logger.getLogger(DefaultTCPConnectionSnifferListener.class);
 
 	private TCPConnectionHandler handler;
@@ -31,17 +26,12 @@ public class DefaultTCPConnectionSnifferListener implements TCPConnectionSniffer
 
 	@Override
 	public final void tcpConnectionSnifferShutdown() {
-		executor.shutdown();
+		GlobalThreadPool.executor.shutdown();
 	}
 
 	@Override
 	public final TCPConnectionStateListener getConnectionStateListener() {
 		return new DefaultConnectionStateListener();
-	}
-
-	@Override
-	public void processConnection(TCPConnection connection) {
-		handler.processConnection(connection);
 	}
 
 	@Override
@@ -64,15 +54,8 @@ public class DefaultTCPConnectionSnifferListener implements TCPConnectionSniffer
 		@Override
 		public void onEstablished(final TCPConnection connection) {
 			if (connectionFilter.isAcceptable(connection.getConnectionDetail())) {
-				Runnable handler = new Runnable() {
-					@Override
-					public void run() {
-
-						processConnection(connection);
-					}
-
-				};
-				executor.execute(handler);
+				handler.onEstablished(connection);
+				connection.registerWritingCallback(handler.getTcpConnectionStreamCallback());
 			}
 		}
 
@@ -86,6 +69,7 @@ public class DefaultTCPConnectionSnifferListener implements TCPConnectionSniffer
 			if (receiver != null) {
 				receiver.getActiveConnections().remove(connection);
 			}
+			handler.onClosed(connection);
 			if (logger.isInfoEnabled())
 				logger.info(connection.getConnectionDetail().toString() + " is released successfully.");
 			connection = null;
