@@ -18,7 +18,7 @@
 #include"Jpcap_ether.h"
 
 /** analyze datalink layer (ethernet) **/
-jobject analyze_datalink(JNIEnv *env,u_char *data,int linktype){
+jobject analyze_datalink(JNIEnv *env,u_char *data,int linktype,int linktype_ext){
   struct ether_header *ether_hdr;
   jobject packet;
   jbyteArray src_addr,dst_addr;
@@ -29,7 +29,15 @@ jobject analyze_datalink(JNIEnv *env,u_char *data,int linktype){
 
   switch(linktype){
   case DLT_EN10MB:
-    packet=AllocObject(EthernetPacket);
+	 switch (linktype_ext)
+	 {
+		case ETHERTYPE_PPPOE:
+			packet=AllocObject(PPPOEPacket);
+			break;
+		default:
+			packet=AllocObject(EthernetPacket);
+			break;
+	}
     src_addr=(*env)->NewByteArray(env,6);
     dst_addr=(*env)->NewByteArray(env,6);
     ether_hdr=(struct ether_header *)data;

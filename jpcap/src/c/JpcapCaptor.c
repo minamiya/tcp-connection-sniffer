@@ -97,7 +97,7 @@ char pcap_errbuf[PCAP_ERRBUF_SIZE][MAX_NUMBER_OF_INSTANCE];
 
 jclass Jpcap=NULL,JpcapHandler,Interface,IAddress,Packet,DatalinkPacket,EthernetPacket,
 	IPPacket,TCPPacket,UDPPacket,ICMPPacket,IPv6Option,ARPPacket,String,Thread,
-	UnknownHostException,IOException;
+	UnknownHostException,IOException,PPPOEPacket;
 
 jmethodID deviceConstMID,addressConstMID,handleMID,setPacketValueMID,setDatalinkPacketMID,
   setPacketHeaderMID,setPacketDataMID,
@@ -112,6 +112,9 @@ jmethodID deviceConstMID,addressConstMID,handleMID,setPacketValueMID,setDatalink
 jfieldID jpcapID;
 
 int linktypes[MAX_NUMBER_OF_INSTANCE];
+//Mark the protocal type between datalink layer and network layer
+int linktypes_ext[MAX_NUMBER_OF_INSTANCE];
+
 bpf_u_int32 netnums[MAX_NUMBER_OF_INSTANCE],netmasks[MAX_NUMBER_OF_INSTANCE];
 jobject jpcap_handlers[MAX_NUMBER_OF_INSTANCE];
 char pcap_errbuf[PCAP_ERRBUF_SIZE][MAX_NUMBER_OF_INSTANCE];
@@ -131,7 +134,7 @@ void analyze_icmp(JNIEnv *env,jobject packet,u_char *data,u_short len);
 u_short analyze_ipv6(JNIEnv *env,jobject packet,u_char *data);
 #endif
 int analyze_arp(JNIEnv *env,jobject packet,u_char *data);
-jobject analyze_datalink(JNIEnv *env,u_char *data,int linktype);
+jobject analyze_datalink(JNIEnv *env,u_char *data,int linktype,int linktype_ext);
 
 
 int getJpcapID(JNIEnv *env,jobject obj)
@@ -388,6 +391,7 @@ Java_jpcap_JpcapCaptor_nativeOpenLive(JNIEnv *env,jobject obj,jstring device,jin
 
   //set_info(env,obj,pcds[id]);
   linktypes[id]=pcap_datalink(pcds[id]);
+ 
   return NULL;
 }
 
@@ -725,6 +729,7 @@ void get_packet(struct pcap_pkthdr header,u_char *data,jobject *packet,int id){
 	  nproto=get_network_type(data,id,offset);
 	if(nproto==ETHERTYPE_PPPOE){
 		offset=pppoe_offset;
+		linktypes_ext[id]=ETHERTYPE_PPPOE;
 		//after set the pppoe offset, retest the nproto and clen
 		nproto=get_network_type(data,id,offset);
 		if(nproto==ETHERTYPE_IP_PACKET)
@@ -732,7 +737,7 @@ void get_packet(struct pcap_pkthdr header,u_char *data,jobject *packet,int id){
 		clen-=datalink_hlen(id,offset);
 	}else
 	{
-		 clen-=datalink_hlen(id,offset);
+		clen-=datalink_hlen(id,offset);
 	}
     break;
   default:
@@ -843,7 +848,7 @@ void get_packet(struct pcap_pkthdr header,u_char *data,jobject *packet,int id){
   //printf("datalink:%d\n",linktypes[id]);
   /** Analyze Datalink**/
   {
-	jobject dlpacket=analyze_datalink(env,data,linktypes[id]);
+	  jobject dlpacket=analyze_datalink(env,data,linktypes[id], linktypes_ext[id]);
     (*env)->CallVoidMethod(env,*packet,setDatalinkPacketMID,dlpacket);
 	DeleteLocalRef(dlpacket);
   }
@@ -940,6 +945,7 @@ void set_Java_env(JNIEnv *env){
   GlobalClassRef(Thread,"java/lang/Thread");
   GlobalClassRef(UnknownHostException,"java/net/UnknownHostException");
   GlobalClassRef(IOException,"java/io/IOException");
+  GlobalClassRef(PPPOEPacket,"jpcap/packet/PPPOEPacket");
 
   if((*env)->ExceptionCheck(env)==JNI_TRUE){
 	  (*env)->ExceptionDescribe(env);

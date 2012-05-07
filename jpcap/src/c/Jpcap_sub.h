@@ -55,7 +55,7 @@ extern JNIEnv *jni_envs[MAX_NUMBER_OF_INSTANCE];
 extern char pcap_errbuf[PCAP_ERRBUF_SIZE][MAX_NUMBER_OF_INSTANCE];
 
 extern jclass JpcapHandler,Packet,DatalinkPacket,EthernetPacket,IPPacket,
-       TCPPacket,UDPPacket,ICMPPacket,IPv6Option,ARPPacket,String,Thread;
+       TCPPacket,UDPPacket,ICMPPacket,IPv6Option,ARPPacket,String,Thread,PPPOEPacket;
 extern jclass UnknownHostException,IOException;
 extern jmethodID printlnMID,handleMID,setPacketValueMID,setDatalinkPacketMID,setPacketDataMID,
   setEthernetValueMID,setIPValueMID,setIPv4OptionMID,setIPv6ValueMID,addIPv6OptHdrMID,
