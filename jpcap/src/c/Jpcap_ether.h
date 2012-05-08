@@ -12,3 +12,12 @@ struct ether_header {
   jbyte ether_dest[6],ether_src[6];
   jchar ether_type;
 };
+
+struct pppoe_header{
+	struct ether_header m_ether_header;
+	jbyte version;
+	jbyte type;
+	jbyte code;
+	jbyte session_id[2];
+	short pay_load_len;
+};

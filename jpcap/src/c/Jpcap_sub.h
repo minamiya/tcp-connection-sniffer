@@ -64,7 +64,8 @@ extern jmethodID printlnMID,handleMID,setPacketValueMID,setDatalinkPacketMID,set
   setICMPRouterAdMID,setV6OptValueMID,setV6OptOptionMID,setV6OptFragmentMID,
   setV6OptRoutingMID,setV6OptAHMID,
   setARPValueMID,
-  getSourceAddressMID,getDestinationAddressMID;
+  getSourceAddressMID,getDestinationAddressMID,
+  setPPPOEValueMID;
 
 extern unsigned short in_cksum(unsigned short *addr,int len);
 extern unsigned short in_cksum2(struct ip *ip,u_short len,unsigned short *data,int size);

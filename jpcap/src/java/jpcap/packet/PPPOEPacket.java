@@ -31,7 +31,7 @@ public class PPPOEPacket extends EthernetPacket{
 	 * @param sessionId session id
 	 * @param payloadLen payload length
 	 */
-	public PPPOEPacket(byte version, byte type, byte code, byte[] sessionId, short payloadLen) {
+	public void setValue(byte version, byte type, byte code, byte[] sessionId, short payloadLen) {
 		this.version = version;
 		this.type = type;
 		this.code = code;

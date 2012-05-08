@@ -107,7 +107,8 @@ jmethodID deviceConstMID,addressConstMID,handleMID,setPacketValueMID,setDatalink
   setICMPRouterAdMID,setV6OptValueMID,setV6OptOptionMID,setV6OptFragmentMID,
   setV6OptRoutingMID,setV6OptAHMID,
   setARPValueMID,
-  getSourceAddressMID,getDestinationAddressMID;
+  getSourceAddressMID,getDestinationAddressMID,
+  setPPPOEValueMID;
 
 jfieldID jpcapID;
 
@@ -963,6 +964,9 @@ void set_Java_env(JNIEnv *env){
 				       "([B)V");
   setEthernetValueMID=(*env)->GetMethodID(env,EthernetPacket,"setValue",
 					  "([B[BS)V");
+  // enable to generate pppoe packet
+  setPPPOEValueMID=(*env)->GetMethodID(env,PPPOEPacket,"setValue",
+					  "(BBB[BS)V");
   // updated by Damien Daspit 5/7/01
   setIPValueMID=(*env)->GetMethodID(env,IPPacket,"setIPv4Value",
 		 "(BBZZZBZZZSSSSS[B[B)V");
