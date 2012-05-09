@@ -7,6 +7,8 @@
 #define ETHERTYPE_VLAN          0x8100  /* IEEE 802.1Q VLAN tagging */
 #define ETHERTYPE_IPV6          0x86dd  /* IPv6 */
 #define ETHERTYPE_LOOPBACK      0x9000  /* used to test interfaces */
+#define ETHERTYPE_VERSION       0xf0
+#define ETHERTYPE_TYPE			0x0f
 
 struct ether_header {
   jbyte ether_dest[6],ether_src[6];
@@ -15,9 +17,8 @@ struct ether_header {
 
 struct pppoe_header{
 	struct ether_header m_ether_header;
-	jbyte version;
-	jbyte type;
+	u_char ver_type;
 	jbyte code;
 	jbyte session_id[2];
-	short pay_load_len;
+	jshort pay_load_len;
 };

@@ -46,8 +46,8 @@ jobject analyze_datalink(JNIEnv *env,u_char *data,int linktype,int linktype_ext)
 			(*env)->SetByteArrayRegion(env,dst_addr,0,6,pppoe_hdr->m_ether_header.ether_dest);
 			(*env)->CallVoidMethod(env,packet,setEthernetValueMID,dst_addr,src_addr,
 				(jchar)ntohs(pppoe_hdr->m_ether_header.ether_type));
-			version = (jbyte)ntohs(pppoe_hdr->version);
-			type = (jbyte)ntohs(pppoe_hdr->type);
+			version = (jbyte)((pppoe_hdr->ver_type&ETHERTYPE_VERSION) >> 4);
+			type = (jbyte)(pppoe_hdr->ver_type&ETHERTYPE_TYPE);
 			code = (jbyte)ntohs(pppoe_hdr->code);
 			(*env)->SetByteArrayRegion(env,session_id,0,2,pppoe_hdr->session_id);
 			pay_load_len = (short)ntohs(pppoe_hdr->pay_load_len);
