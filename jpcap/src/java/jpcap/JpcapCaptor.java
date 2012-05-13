@@ -26,6 +26,8 @@ public class JpcapCaptor extends JpcapInstance {
 	 */
 	public int dropped_packets;
 
+	private JpcapFilter jpcapFilter;
+
 	private native String nativeOpenLive(String device, int snaplen,
 			int promisc, int to_ms);
 
@@ -239,7 +241,9 @@ public class JpcapCaptor extends JpcapInstance {
 	 * @param filter
 	 *            the packet filter definition
 	 */
-	public native void setJpcapFilter(JpcapFilter filter);
+	public void setJpcapFilter(JpcapFilter filter) {
+		this.jpcapFilter = filter;
+	}
 
 	/**
 	 * Updates {@link #received_packets received_packets} and

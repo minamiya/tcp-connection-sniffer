@@ -99,6 +99,9 @@ jclass Jpcap=NULL,JpcapHandler,Interface,IAddress,Packet,DatalinkPacket,Ethernet
 	IPPacket,TCPPacket,UDPPacket,ICMPPacket,IPv6Option,ARPPacket,String,Thread,
 	UnknownHostException,IOException,PPPOEPacket;
 
+jclass JArrayList=NULL, JpcapFilter=NULL;
+jmethodID getValueByIndex, getSize;
+
 jmethodID deviceConstMID,addressConstMID,handleMID,setPacketValueMID,setDatalinkPacketMID,
   setPacketHeaderMID,setPacketDataMID,
   setEthernetValueMID,setIPValueMID,setIPv4OptionMID,setIPv6ValueMID,addIPv6OptHdrMID,
@@ -111,6 +114,8 @@ jmethodID deviceConstMID,addressConstMID,handleMID,setPacketValueMID,setDatalink
   setPPPOEValueMID;
 
 jfieldID jpcapID;
+jobject jpcapFilter;
+void initJpcapFilter(JNIEnv *,jobject);
 
 int linktypes[MAX_NUMBER_OF_INSTANCE];
 //Mark the protocal type between datalink layer and network layer
@@ -123,6 +128,7 @@ char pcap_errbuf[PCAP_ERRBUF_SIZE][MAX_NUMBER_OF_INSTANCE];
 void set_info(JNIEnv *env,jobject obj,pcap_t *pcd);
 void set_Java_env(JNIEnv *);
 void get_packet(struct pcap_pkthdr,u_char *,jobject *,int);
+jobject get_next_packet(JNIEnv *, struct pcap_pkthdr *, jobject *, int);
 void dispatcher_handler(u_char *,const struct pcap_pkthdr *,const u_char *);
 
 struct ip_packet *getIP(char *payload);
@@ -471,6 +477,7 @@ Java_jpcap_JpcapCaptor_loopPacket(JNIEnv *env,jobject obj,
 
   jni_envs[id]=env;
   jpcap_handlers[id]=(*env)->NewGlobalRef(env,handler);
+  initJpcapFilter(env, obj);
 
   pkt_cnt=pcap_loop(pcds[id],cnt,dispatcher_handler,(u_char *)id);
 
@@ -490,7 +497,7 @@ Java_jpcap_JpcapCaptor_getPacket(JNIEnv *env,jobject obj)
   int id=getJpcapID(env,obj);
   u_char *data;
   int res;
-
+  initJpcapFilter(env,obj);
   res=pcap_next_ex(pcds[id],&header,(const u_char **)&data);
 
   switch(res){
@@ -705,6 +712,17 @@ void dispatcher_handler(u_char *id,const struct pcap_pkthdr *header,
 //  printf("leave:%d\n",ID);
   YIELD();
 }
+ 
+
+int getJArrayListSize(JNIEnv *env, jobject arrayList){
+	return (*env)->CallIntMethod(env, arrayList, getSize);
+}
+
+jstring getValueByIndexM(JNIEnv *env, jobject arrayList, int index){
+	return (jstring)(*env)->CallObjectMethod(env, arrayList, getValueByIndex, index);
+}
+
+
 
 void get_packet(struct pcap_pkthdr header,u_char *data,jobject *packet,int id){
 
@@ -927,6 +945,18 @@ void get_packet(struct pcap_pkthdr header,u_char *data,jobject *packet,int id){
     (*env)->CallVoidMethod(env,*packet,setPacketDataMID,dataArray);
     DeleteLocalRef(dataArray);
   }
+  //Add the filter here
+  if(jpcapFilter!=NULL){
+	  jobject hosts = GetObjectField(JpcapFilter, jpcapFilter,"Ljpcap/JpcapFilter;","hosts");
+	  jobject srcHosts = GetObjectField(JpcapFilter, jpcapFilter,"Ljpcap/JpcapFilter;","srcHosts");
+	  jobject destHosts = GetObjectField(JpcapFilter, jpcapFilter,"Ljpcap/JpcapFilter;","destHosts");
+	  jobject ports = GetObjectField(JpcapFilter, jpcapFilter,"Ljpcap/JpcapFilter;","ports");
+	  jobject srcPorts = GetObjectField(JpcapFilter, jpcapFilter,"Ljpcap/JpcapFilter;","srcPorts");
+	  jobject destPorts = GetObjectField(JpcapFilter, jpcapFilter,"Ljpcap/JpcapFilter;","destPorts");
+	  jobject protocols = GetObjectField(JpcapFilter, jpcapFilter,"Ljpcap/JpcapFilter;","protocols");
+	  
+
+  }
 }
 
 void set_Java_env(JNIEnv *env){
@@ -947,6 +977,9 @@ void set_Java_env(JNIEnv *env){
   GlobalClassRef(UnknownHostException,"java/net/UnknownHostException");
   GlobalClassRef(IOException,"java/io/IOException");
   GlobalClassRef(PPPOEPacket,"jpcap/packet/PPPOEPacket");
+  GlobalClassRef(JArrayList,"java/util/ArrayList");
+  GlobalClassRef(JpcapFilter,"jpcap/JpcapFilter");
+ 
 
   if((*env)->ExceptionCheck(env)==JNI_TRUE){
 	  (*env)->ExceptionDescribe(env);
@@ -1008,10 +1041,39 @@ void set_Java_env(JNIEnv *env){
 					       "()[B");
   setARPValueMID=(*env)->GetMethodID(env,ARPPacket,"setValue",
 				     "(SSSSS[B[B[B[B)V");
+  getValueByIndex=(*env)->GetMethodID(env,JArrayList,"get","(I)Ljava/lang/Object;");  
+  getSize=(*env)->GetMethodID(env, JArrayList,"size","()I"); 
+
   jpcapID=(*env)->GetFieldID(env,Jpcap,"ID","I");
 
   if((*env)->ExceptionCheck(env)==JNI_TRUE){
 	  (*env)->ExceptionDescribe(env);
 	  return;
   }
+}
+//When have a packet to pass the filter, if the packet fails to pass the filter, get the next packet.
+jobject get_next_packet(JNIEnv *env, struct pcap_pkthdr *header, jobject *packet, int id){
+  u_char *data;
+  int res;
+
+  res=pcap_next_ex(pcds[id],&header,(const u_char **)&data);
+
+  switch(res){
+	  case 0: //timeout
+		  return NULL;
+	  case -1: //error
+		  return NULL;
+	  case -2:
+		  return GetStaticObjectField(Packet,"Ljpcap/packet/Packet;","EOF");
+  }
+  
+  if(data==NULL) return NULL;
+  get_packet(*header,data,packet,id);
+  return *packet;
+}
+
+void initJpcapFilter(JNIEnv *env,jobject obj){
+	if(jpcapFilter == NULL){
+		jpcapFilter=GetObjectField(Jpcap, obj,"Ljpcap/JpcapCaptor;","jpcapFilter");
+	}
 }
