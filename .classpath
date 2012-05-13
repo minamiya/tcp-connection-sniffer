@@ -1,7 +1,14 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <classpath>
-	<classpathentry kind="src" path="src"/>
-	<classpathentry kind="src" path="test"/>
+	<classpathentry kind="src" path="tcpConnectionSniffer/sample"/>
+	<classpathentry kind="src" path="tcpConnectionSniffer/src"/>
+	<classpathentry kind="src" path="tcpConnectionSniffer/test"/>
+	<classpathentry kind="src" path="httpSniffer/sample"/>
+	<classpathentry kind="src" path="httpSniffer/src"/>
+	<classpathentry kind="src" path="httpSniffer/test"/>
+	<classpathentry kind="src" path="mysqlSniffer/sample"/>
+	<classpathentry kind="src" path="mysqlSniffer/src"/>
+	<classpathentry kind="src" path="mysqlSniffer/test"/>
 	<classpathentry kind="src" path="jpcap/src/java"/>
 	<classpathentry kind="con" path="org.eclipse.jdt.launching.JRE_CONTAINER/org.eclipse.jdt.internal.debug.ui.launcher.StandardVMType/JavaSE-1.6">
 		<accessrules>
