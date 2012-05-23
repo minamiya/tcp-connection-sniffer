@@ -1,5 +1,7 @@
 package jpcap;
 
+import java.net.InetAddress;
+import java.net.UnknownHostException;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -180,5 +182,45 @@ public class JpcapFilter {
 		 */
 		ARP
 	}
-
+	//Signature: (Ljava/lang/String;)I
+	public int compareProtocol(String protocol){
+		int match = 0;
+		for(Protocol pro : this.protocols){
+			if(pro.toString().equals(protocol.toString())){
+				match = 1;
+				break;
+			}
+		}
+		return match;
+	}
+	//Signature: (Ljava/util/List;[B)I
+	public int compareAddress(List<String> containedAddr, byte[] address){
+		int match = 0;
+		for(String addr:containedAddr){
+			try {
+				if(InetAddress.getByName(addr).equals(InetAddress.getByAddress(address))){
+					match = 1;
+					break;
+				}
+			} catch (UnknownHostException e) {
+			}
+		}
+		return match;
+	}
+	// Signature: (Ljava/util/List;I)I
+	public int comparePort(List<String> containdPorts, int port){
+		int match = 0;
+		for(String pt: containdPorts){
+			if(pt.equals(port + "")){
+				match = 1;
+				break;
+			}
+		}
+		return match;
+	}
+	
+	
+	
 }
+
+

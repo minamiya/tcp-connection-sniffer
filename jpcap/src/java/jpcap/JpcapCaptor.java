@@ -28,6 +28,10 @@ public class JpcapCaptor extends JpcapInstance {
 
 	private JpcapFilter jpcapFilter;
 
+	public JpcapFilter getJpcapFilter() {
+		return jpcapFilter;
+	}
+
 	private native String nativeOpenLive(String device, int snaplen,
 			int promisc, int to_ms);
 
