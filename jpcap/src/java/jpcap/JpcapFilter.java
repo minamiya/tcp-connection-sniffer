@@ -182,8 +182,14 @@ public class JpcapFilter {
 		 */
 		ARP
 	}
+	//A tool used by JNI to compare the protocol
 	//Signature: (Ljava/lang/String;)I
 	public int compareProtocol(String protocol){
+		
+		if(this.protocols.isEmpty()){
+			return 1;
+		}
+		
 		int match = 0;
 		for(Protocol pro : this.protocols){
 			if(pro.toString().equals(protocol.toString())){
@@ -193,6 +199,7 @@ public class JpcapFilter {
 		}
 		return match;
 	}
+	//A tool used by JNI to compare the IP Address
 	//Signature: (Ljava/util/List;[B)I
 	public int compareAddress(List<String> containedAddr, byte[] address){
 		int match = 0;
@@ -207,6 +214,7 @@ public class JpcapFilter {
 		}
 		return match;
 	}
+	//A tool used by JNI to compare the port
 	// Signature: (Ljava/util/List;I)I
 	public int comparePort(List<String> containdPorts, int port){
 		int match = 0;
@@ -218,8 +226,11 @@ public class JpcapFilter {
 		}
 		return match;
 	}
-	
-	
+	//A tool use by JNI to judge whether a list is empty.
+	//Signature: (Ljava/util/List;)I
+	public int isEmpty(List array){
+		return array.isEmpty() ? 0 : 1;
+	}
 	
 }
 

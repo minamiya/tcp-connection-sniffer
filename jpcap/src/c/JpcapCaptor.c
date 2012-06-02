@@ -139,14 +139,18 @@ jobject analyze_datalink(JNIEnv *env,u_char *data,int linktype,int linktype_ext)
 //Added on 5.13 2012
 jfieldID jpcapID;
 jobject jpcapFilter, protocols, hosts, srcHosts, destHosts, ports, srcPorts, destPorts;
-jclass JArrayList=NULL, JpcapFilter=NULL;
-jmethodID getValueByIndex, getSize, compareProtocolMID, compareAddressMID, comparePortMID, getJpcapFilterMID, 
-	getHostsMID, getPortsMID, getProtocolsMID, getSrcHostsMID, getDestHostsMID, getSrcPortsMID, getDestPortsMID;
+jclass JpcapFilter=NULL;
+jmethodID compareProtocolMID, compareAddressMID, comparePortMID, getJpcapFilterMID, getHostsMID, 
+	getPortsMID, getProtocolsMID, getSrcHostsMID, getDestHostsMID, getSrcPortsMID, getDestPortsMID,
+	isListEmptyMID;
 
 void initJpcapFilter(JNIEnv *,jobject);
-jobject get_next_packet(JNIEnv *, struct pcap_pkthdr *, jobject *, int);
-int jpcap_host_filter(JNIEnv *, jobject, jobject);
+int get_next_packet(JNIEnv *, struct pcap_pkthdr *, jobject *, int);
+int jpcap_host_filter(JNIEnv *, jbyteArray, jobject);
+int jpcap_port_filter(JNIEnv *, jshort, jobject);
 int jpcap_protocol_filter(JNIEnv *, char *);
+int isEmpty(JNIEnv *, jobject);
+int doFilter(JNIEnv *, jobject *);
 
 
 
@@ -718,17 +722,6 @@ void dispatcher_handler(u_char *id,const struct pcap_pkthdr *header,
   YIELD();
 }
  
-
-int getJArrayListSize(JNIEnv *env, jobject arrayList){
-	return (*env)->CallIntMethod(env, arrayList, getSize);
-}
-
-jstring getValueByIndexM(JNIEnv *env, jobject arrayList, int index){
-	return (jstring)(*env)->CallObjectMethod(env, arrayList, getValueByIndex, index);
-}
-
-
-
 int get_packet(struct pcap_pkthdr header,u_char *data,jobject *packet,int id){
 
   u_short nproto,tproto;
@@ -891,7 +884,7 @@ int get_packet(struct pcap_pkthdr header,u_char *data,jobject *packet,int id){
     }
   }
   if(pass == 0){
-	  return 0;
+	  goto get_next_packet;
   }
   (*env)->CallVoidMethod(env,*packet,setPacketValueMID,
 			     (jlong)header.ts.tv_sec,(jlong)header.ts.tv_usec,
@@ -981,20 +974,12 @@ int get_packet(struct pcap_pkthdr header,u_char *data,jobject *packet,int id){
 
   //Add the filter here
   if(jpcapFilter!=NULL){  
-	 //Resolve hosts comparison
-	  //passed = jpcap_host_filter(env, *packet, hosts);
-
-	  //Resolve source hosts comparison
-	  //Resolve destination hosts comparison
-	  //Resolve ports comparison
-	  //Resolve source port comparison
-	  //Resolve destination port comparison
+	 pass = doFilter(env,packet);
   }
-  /*
+  get_next_packet:
   if(!pass){
-	  get_next_packet(env, &header, packet, id);
+	  return get_next_packet(env, &header, packet, id);
   }
-  */
 
   return 1;
 }
@@ -1017,7 +1002,6 @@ void set_Java_env(JNIEnv *env){
   GlobalClassRef(UnknownHostException,"java/net/UnknownHostException");
   GlobalClassRef(IOException,"java/io/IOException");
   GlobalClassRef(PPPOEPacket,"jpcap/packet/PPPOEPacket");
-  GlobalClassRef(JArrayList,"java/util/ArrayList");
   GlobalClassRef(JpcapFilter,"jpcap/JpcapFilter");
  
 
@@ -1081,7 +1065,7 @@ void set_Java_env(JNIEnv *env){
 					       "()[B");
   setARPValueMID=(*env)->GetMethodID(env,ARPPacket,"setValue",
 				     "(SSSSS[B[B[B[B)V");
-  getValueByIndex=(*env)->GetMethodID(env,JArrayList,"get","(I)Ljava/lang/Object;");  
+ 
   compareProtocolMID=(*env)->GetMethodID(env,JpcapFilter,"compareProtocol", "(Ljava/lang/String;)I");
   compareAddressMID=(*env)->GetMethodID(env,JpcapFilter,"compareAddress", "(Ljava/util/List;[B)I"); 
   comparePortMID=(*env)->GetMethodID(env,JpcapFilter,"comparePort", "(Ljava/util/List;I)I");
@@ -1093,10 +1077,8 @@ void set_Java_env(JNIEnv *env){
   getSrcPortsMID=(*env)->GetMethodID(env,JpcapFilter,"getSrcPorts", "()Ljava/util/List;");
   getDestPortsMID=(*env)->GetMethodID(env,JpcapFilter,"getDestPorts", "()Ljava/util/List;");
   getJpcapFilterMID=(*env)->GetMethodID(env,Jpcap,"getJpcapFilter", "()Ljpcap/JpcapFilter;");
+  isListEmptyMID=(*env)->GetMethodID(env,JpcapFilter,"isEmpty","(Ljava/util/List;)I");
   
-  getSize=(*env)->GetMethodID(env, JArrayList,"size","()I"); 
-
-
   jpcapID=(*env)->GetFieldID(env,Jpcap,"ID","I");
 
   if((*env)->ExceptionCheck(env)==JNI_TRUE){
@@ -1105,7 +1087,7 @@ void set_Java_env(JNIEnv *env){
   }
 }
 //When have a packet to pass the filter, if the packet fails to pass the filter, get the next packet.
-jobject get_next_packet(JNIEnv *env, struct pcap_pkthdr *header, jobject *packet, int id){
+int get_next_packet(JNIEnv *env, struct pcap_pkthdr *header, jobject *packet, int id){
   u_char *data;
   int res;
 
@@ -1113,19 +1095,20 @@ jobject get_next_packet(JNIEnv *env, struct pcap_pkthdr *header, jobject *packet
 
   switch(res){
 	  case 0: //timeout
-		  return NULL;
+		  return 0;
 	  case -1: //error
-		  return NULL;
+		  return 0;
 	  case -2:
-		  return GetStaticObjectField(Packet,"Ljpcap/packet/Packet;","EOF");
+		  *packet = GetStaticObjectField(Packet,"Ljpcap/packet/Packet;","EOF");
+		  return 1;
   }
   
-  if(data==NULL) return NULL;
+  if(data==NULL) return 0;
   res = get_packet(*header,data,packet,id);
   if(!res){
-	  return NULL;
+	  return 0;
   }
-  return *packet;
+  return 1;
 }
 
 void initJpcapFilter(JNIEnv *env,jobject obj){
@@ -1133,7 +1116,7 @@ void initJpcapFilter(JNIEnv *env,jobject obj){
 	if(jpcapFilter == NULL){
 		jpcapFilter=(*env)->CallObjectMethod(env, obj, getJpcapFilterMID);
 	}
-	/*
+	
 	if(jpcapFilter != NULL){
 		hosts = (*env)->CallObjectMethod(env,jpcapFilter,getHostsMID);
 		srcHosts = (*env)->CallObjectMethod(env,jpcapFilter,getSrcHostsMID);
@@ -1141,15 +1124,20 @@ void initJpcapFilter(JNIEnv *env,jobject obj){
 		ports = (*env)->CallObjectMethod(env,jpcapFilter,getPortsMID);
 		srcPorts = (*env)->CallObjectMethod(env,jpcapFilter,getSrcPortsMID);
 		destPorts = (*env)->CallObjectMethod(env,jpcapFilter,getDestPortsMID);
-		protocols = (*env)->CallObjectMethod(env,jpcapFilter,getProtocolsMID);
+		//protocols = (*env)->CallObjectMethod(env,jpcapFilter,getProtocolsMID);
 	}
-	*/
 }
 
  //Resolve hosts comparison
-int jpcap_host_filter(JNIEnv *env, jobject packet, jobject hosts){
-	return 1;
+int jpcap_host_filter(JNIEnv *env, jbyteArray address, jobject hosts){
+	return (*env)->CallIntMethod(env, jpcapFilter, compareAddressMID, hosts, address);
 }
+//Resolve port comparison
+int jpcap_port_filter(JNIEnv *env, jshort port, jobject ports){
+	return (*env)->CallIntMethod(env, jpcapFilter, comparePortMID, ports, port);
+}
+
+
 jstring chars_to_jstring(JNIEnv* env, char* pat)  
 { 
 	jclass strClass =FindClass("Ljava/lang/String;");  
@@ -1166,4 +1154,76 @@ int jpcap_protocol_filter(JNIEnv *env, char *protocol){
 		return (*env)->CallIntMethod(env, jpcapFilter,compareProtocolMID, pro);
 	}
 	return 1;
+}
+
+//Whether a list is empty
+int isEmpty(JNIEnv *env, jobject list){
+	return (*env)->CallIntMethod(env, jpcapFilter, isListEmptyMID, list);
+}
+
+int doFilter(JNIEnv *env, jobject *packet){
+	jbyteArray pkg_src_ip = NULL;
+	jbyteArray pkg_dest_ip = NULL;
+	jint pkg_src_port = NULL;
+	jint pkg_dest_port = NULL;
+	int pass = 1;
+	//if hosts are filled but packet is not IPPacket, then failed to pass the filter
+	if (IsInstanceOf(*packet, IPPacket))
+	{
+		pkg_src_ip=(*env)->CallObjectMethod(env,*packet,getSourceAddressMID);
+		pkg_dest_ip=(*env)->CallObjectMethod(env,*packet,getDestinationAddressMID);
+		// if port is filled, but packet is not TCP Packet, then failed to pass the filter
+		if (IsInstanceOf(*packet, TCPPacket))
+		{
+			pkg_src_port = (jint)GetIntField(TCPPacket,*packet,"src_port");
+			pkg_dest_port = (jint)GetIntField(TCPPacket,*packet,"dst_port");
+		}else{
+			if(isEmpty(env,ports) || isEmpty(env,srcPorts) || isEmpty(env,destPorts)){
+				pass = 0;
+			}
+		}
+	}else{
+		if(isEmpty(env,hosts) || isEmpty(env,srcHosts) || isEmpty(env,destHosts)){
+			pass = 0;
+		}
+	}
+	//if hosts contain the source IP or destination IP,then packet pass the filter, otherwise failed to pass.
+	if(pass){
+		if(isEmpty(env,hosts)){
+			pass = jpcap_host_filter(env, pkg_src_ip, hosts);
+			pass = (pass || jpcap_host_filter(env, pkg_dest_ip, hosts));
+		}
+	}
+	//if source IP is contained in Source Hosts in Jpcap Filter, packet pass the filter, otherwise failed to pass.
+	if(pass){
+		if(isEmpty(env,srcHosts)){
+			pass = jpcap_host_filter(env, pkg_src_ip, srcHosts);
+		}
+	}
+	//if destination IP is contained in Destination Hosts in Jpcap Filter, packet pass the filter, otherwise failed to pass.
+	if(pass){
+		if(isEmpty(env,destHosts)){
+			pass = jpcap_host_filter(env,pkg_dest_ip, destHosts);
+		}
+	}
+	// if TCP packet port is contained in Ports of Jpcap Filter, packet will pass the filter, otherwise failed to pass.
+	if(pass){
+		if(isEmpty(env,ports)){
+			pass = jpcap_port_filter(env,pkg_src_port,ports);
+			pass = pass || jpcap_port_filter(env,pkg_dest_port,ports);
+		}
+	}
+	// if TCP packet source port is contained in Source Ports of Jpcap Filter, packet will pass the filter, otherwise failed to pass.
+	if(pass){
+		if(isEmpty(env,srcPorts)){
+			pass = jpcap_port_filter(env, pkg_src_port, srcPorts);
+		}
+	}
+	// if TCP packet destination port is contained in Destination Port of Jpcap Filter, the packet will pass the filter, otherwise failed to pass.
+	if(pass){
+		if(isEmpty(env,destPorts)){
+			pass = jpcap_port_filter(env, pkg_dest_port, destPorts);
+		}
+	}
+	return pass;
 }
