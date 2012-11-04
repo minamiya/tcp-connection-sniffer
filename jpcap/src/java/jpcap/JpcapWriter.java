@@ -34,6 +34,6 @@ public class JpcapWriter
 	public native void writePacket(Packet packet);
 	
   static{
-    System.loadLibrary("jpcap");
+    LibLoader.load();
   }
 }
