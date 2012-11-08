@@ -17,7 +17,7 @@ public class PppoeSupportTest {
 
 	@Test
 	public void testSupportPppoeParse() throws IOException {
-		JpcapCaptor captor = JpcapCaptor.openFile("test/pppoe/pppoe.pcap");
+		JpcapCaptor captor = JpcapCaptor.openFile("tcpConnectionSniffer/test/pppoe/pppoe.pcap");
 		captor.loopPacket(0, new PacketReceiver() {
 
 			@Override

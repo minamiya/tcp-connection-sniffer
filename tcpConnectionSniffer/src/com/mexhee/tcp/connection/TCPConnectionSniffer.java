@@ -8,10 +8,6 @@ import jpcap.packet.Packet;
 
 import org.apache.log4j.Logger;
 
-import com.mexhee.tcp.connection.listener.ConnectionFilter;
-import com.mexhee.tcp.connection.listener.DefaultTCPConnectionSnifferListener;
-import com.mexhee.tcp.connection.listener.TCPConnectionHandler;
-import com.mexhee.tcp.connection.listener.TCPConnectionSnifferListener;
 import com.mexhee.tcp.packet.TCPPacketImpl;
 
 /**
@@ -26,7 +22,7 @@ public class TCPConnectionSniffer {
 	 * filter
 	 */
 	private ConnectionFilter connectionFilter = new ConnectionFilter();
-	private TCPConnectionSnifferListener snifferListener;
+	private PacketReceiverImpl picker;
 
 	/**
 	 * begin to sniffer tcp connections on networkInterface, according to
@@ -39,23 +35,42 @@ public class TCPConnectionSniffer {
 	 * @throws IOException
 	 *             open network interface failed or set filter failed
 	 */
-	public void startup(NetworkInterface networkInterface, TCPConnectionHandler connectionHandler) throws IOException {
+	public void startup(NetworkInterface networkInterface) throws IOException {
 		captor = JpcapCaptor.openDevice(networkInterface, 2000, false, 10000);
+		startupInNewThread();
+	}
+
+	/**
+	 * begin to sniffer tcp connections on networkInterface, according to
+	 * configuration
+	 * 
+	 * @param networkInterface
+	 *            which network interface the data sniffer bases on, use
+	 *            {@link #allInterfaces()} to list existing network interfaces
+	 *            in this computer
+	 * @throws IOException
+	 *             open network interface failed or set filter failed
+	 */
+	public void startup(String filename) throws IOException {
+		captor = JpcapCaptor.openFile(filename);
+		startupInNewThread();
+	}
+
+	private void startupInNewThread() {
 		captor.setJpcapFilter(connectionFilter.getJpcapFilter());
-		// below code should be removed after setJpcapFilter is implemented
-		captor.setFilter("tcp", true);
-		snifferListener = new DefaultTCPConnectionSnifferListener(connectionHandler, connectionFilter);
-		final PacketReceiverImpl picker = new PacketReceiverImpl(snifferListener);
-		((DefaultTCPConnectionSnifferListener) snifferListener).setPacketReceiver(picker);
+		picker = new PacketReceiverImpl(connectionFilter);
+		Thread t = new Thread(new Runnable() {
+			@Override
+			public void run() {
+				startup();
+			}
+		});
+		t.setName("PacketsPicker");
+		t.start();
+	}
+
+	private void startup() {
 		logger.info("starting up tcp connection sniffer");
-		/*
-		 * start up obsolete resources cleaner worker, used to clean
-		 * timeout/(long time no active packets) connections
-		 */
-		Thread cleaner = new Thread(new ObsoleteConnectionCleaner(picker, snifferListener.getConnectionStateListener()));
-		cleaner.setDaemon(true);
-		cleaner.start();
-		logger.info("started timeout tcp connection cleaner");
 		captor.loopPacket(0, new jpcap.PacketReceiver() {
 			public void receivePacket(Packet packet) {
 				try {
@@ -67,6 +82,11 @@ public class TCPConnectionSniffer {
 				}
 			}
 		});
+		Thread cleaner = new Thread(new ObsoleteConnectionCleaner(picker));
+		cleaner.setDaemon(true);
+		cleaner.setName("ObsoleteConnectionCleaner");
+		// cleaner.start();
+		logger.info("started timeout tcp connection cleaner");
 	}
 
 	/**
@@ -87,9 +107,6 @@ public class TCPConnectionSniffer {
 		if (captor != null) {
 			captor.breakLoop();
 		}
-		if (snifferListener != null) {
-			snifferListener.tcpConnectionSnifferShutdown();
-		}
 	}
 
 	/**
@@ -97,5 +114,20 @@ public class TCPConnectionSniffer {
 	 */
 	public static NetworkInterface[] allInterfaces() {
 		return JpcapCaptor.getDeviceList();
+	}
+
+	public TCPConnection acceptConnection() {
+		TCPConnection connection = picker.poll();
+		if (connection == null) {
+			synchronized (picker) {
+				try {
+					picker.wait();
+				} catch (InterruptedException e) {
+					logger.error(e);
+				}
+			}
+			connection = picker.poll();
+		}
+		return connection;
 	}
 }

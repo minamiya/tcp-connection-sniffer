@@ -19,9 +19,9 @@ public class PacketsBuffer {
 	 */
 	SortedSet<TCPPacket> scTemporaryStoredPackets = new TreeSet<TCPPacket>();
 
-	private TCPConnection connection;
+	private TCPConnectionImpl connection;
 
-	public PacketsBuffer(TCPConnection connection) {
+	public PacketsBuffer(TCPConnectionImpl connection) {
 		this.connection = connection;
 	}
 

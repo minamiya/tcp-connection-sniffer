@@ -3,11 +3,12 @@ package com.mexhee.tcp.connection;
 import java.io.IOException;
 import java.util.Collection;
 import java.util.Map;
+import java.util.Queue;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentLinkedQueue;
 
 import org.apache.log4j.Logger;
 
-import com.mexhee.tcp.connection.listener.TCPConnectionSnifferListener;
 import com.mexhee.tcp.packet.TCPPacket;
 
 /**
@@ -21,16 +22,18 @@ public class PacketReceiverImpl implements PacketReceiver {
 	 * active connections that detected from tcp 3 handshakes or n continuous
 	 * data packets
 	 */
-	private Map<ConnectionDetail, TCPConnection> activeConnections = new ConcurrentHashMap<ConnectionDetail, TCPConnection>();
+	private Map<ConnectionDetail, TCPConnectionImpl> activeConnections = new ConcurrentHashMap<ConnectionDetail, TCPConnectionImpl>();
 	/**
 	 * candidate connections that to be detected from n continuous data packets
 	 */
-	private Map<ConnectionDetail, TCPConnection> halfWayConnections = new ConcurrentHashMap<ConnectionDetail, TCPConnection>();
+	private Map<ConnectionDetail, TCPConnectionImpl> halfWayConnections = new ConcurrentHashMap<ConnectionDetail, TCPConnectionImpl>();
 
-	private TCPConnectionSnifferListener snifferListener;
+	private Queue<TCPConnection> establishedConnections = new ConcurrentLinkedQueue<TCPConnection>();
 
-	public PacketReceiverImpl(TCPConnectionSnifferListener snifferListener) {
-		this.snifferListener = snifferListener;
+	private ConnectionFilter filter;
+
+	public PacketReceiverImpl(ConnectionFilter filter) {
+		this.filter = filter;
 	}
 
 	/**
@@ -49,9 +52,8 @@ public class PacketReceiverImpl implements PacketReceiver {
 			if (logger.isDebugEnabled())
 				logger.debug("hands shake 1 packet");
 			ConnectionDetail connectionDetail = tcpPacket.getConnectionDetail();
-			if (snifferListener.isAcceptable(connectionDetail)) {
-				TCPConnection connection = new TCPConnection(connectionDetail,
-						snifferListener.getConnectionStateListener());
+			if (filter.isAcceptable(connectionDetail)) {
+				TCPConnectionImpl connection = new TCPConnectionImpl(connectionDetail);
 				activeConnections.put(connectionDetail, connection);
 				connection.processSyncPacket(tcpPacket);
 			} else {
@@ -60,12 +62,10 @@ public class PacketReceiverImpl implements PacketReceiver {
 			}
 			return;
 		}
-		TCPConnection connection = activeConnections.get(tcpPacket.getConnectionDetail());
+		TCPConnectionImpl connection = activeConnections.get(tcpPacket.getConnectionDetail());
 		// the connect is not accepted, so ignore this packet
 		if (connection == null) {
-			if (snifferListener.isHalfWayConnectionDetectionEnabled()) {
-				handleHalfWayConnectionPackets(tcpPacket);
-			}
+			handleHalfWayConnectionPackets(tcpPacket);
 			return;
 		}
 		tcpPacket.detectPacketFlowDirection(connection.getConnectionDetail());
@@ -116,10 +116,9 @@ public class PacketReceiverImpl implements PacketReceiver {
 		 * connection direction, which is client & which is server, so just use
 		 * the first data packet direction as its connection direction.
 		 */
-		TCPConnection connection = halfWayConnections.get(tcpPacket.getConnectionDetail());
+		TCPConnectionImpl connection = halfWayConnections.get(tcpPacket.getConnectionDetail());
 		if (connection == null) {
-			connection = new TCPConnection(tcpPacket.getConnectionDetail(),
-					snifferListener.getConnectionStateListener());
+			connection = new TCPConnectionImpl(tcpPacket.getConnectionDetail());
 			halfWayConnections.put(tcpPacket.getConnectionDetail(), connection);
 			tcpPacket.detectPacketFlowDirection(connection.getConnectionDetail());
 			connection.getPacketsBuffer().addToCSTemporaryStoredDataPackets(tcpPacket);
@@ -155,19 +154,20 @@ public class PacketReceiverImpl implements PacketReceiver {
 					connection.getPacketsBuffer().addToSCTemporaryStoredDataPackets(tcpPacket);
 				}
 			}
-			if(processed){
+			if (processed) {
 				halfWayConnections.remove(connection.getConnectionDetail());
 				activeConnections.put(connection.getConnectionDetail(), connection);
 				connection.setState(TCPConnectionState.Established);
-				snifferListener.onConnectionDetected(connection);
+				establishedNewConnection(connection);
 				connection.processDataPacket(tcpPacket);
 				tryToProcessPacketsInBuffer(connection);
 			}
 		}
 	}
-	
-	public boolean isPreviousAnotherDirectionPacket(TCPPacket currentPacket,TCPPacket previousPacket) {
-		return currentPacket.getAckNum() == previousPacket.getSequence() + (previousPacket.getData()!=null?previousPacket.getData().length:0)
+
+	public boolean isPreviousAnotherDirectionPacket(TCPPacket currentPacket, TCPPacket previousPacket) {
+		return currentPacket.getAckNum() == previousPacket.getSequence()
+				+ (previousPacket.getData() != null ? previousPacket.getData().length : 0)
 				&& currentPacket.getSequence() == previousPacket.getAckNum();
 	}
 
@@ -176,19 +176,25 @@ public class PacketReceiverImpl implements PacketReceiver {
 	 * "could continue process according to sequence number" packets, and put it
 	 * to connection instance to process
 	 */
-	private void tryToProcessPacketsInBuffer(TCPConnection connection) throws IOException {
+	private void tryToProcessPacketsInBuffer(TCPConnectionImpl connection) throws IOException {
 		TCPPacket bufferedPacket = null;
 		while ((bufferedPacket = connection.getPacketsBuffer().pickupPacket()) != null) {
 			handlePacket(bufferedPacket, connection);
 		}
 	}
 
-	private void handlePacket(TCPPacket tcpPacket, TCPConnection connection) throws IOException {
+	private void handlePacket(TCPPacket tcpPacket, TCPConnectionImpl connection) throws IOException {
 		if (tcpPacket.isRest()) {
 			connection.processRstPacket(tcpPacket);
 		}
 		if (tcpPacket.isAck()) {
+			TCPConnectionState previousState = connection.getState();
 			connection.processAckPacket(tcpPacket);
+			if (previousState == TCPConnectionState.SynReceived
+					&& connection.getState() == TCPConnectionState.Established) {
+				// new established connection
+				establishedNewConnection(connection);
+			}
 		}
 		if (tcpPacket.isContainsData()) {
 			connection.processDataPacket(tcpPacket);
@@ -203,7 +209,18 @@ public class PacketReceiverImpl implements PacketReceiver {
 	/**
 	 * return all active tcp connections that maintained by this receiver
 	 */
-	public Collection<TCPConnection> getActiveConnections() {
+	public Collection<TCPConnectionImpl> getActiveConnections() {
 		return activeConnections.values();
+	}
+	
+	private void establishedNewConnection(TCPConnection connection){
+		establishedConnections.add(connection);
+		synchronized (this) {
+			this.notify();
+		}
+	}
+
+	public TCPConnection poll() {
+		return establishedConnections.poll();
 	}
 }

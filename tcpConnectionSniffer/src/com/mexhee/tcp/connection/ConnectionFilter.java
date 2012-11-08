@@ -1,4 +1,4 @@
-package com.mexhee.tcp.connection.listener;
+package com.mexhee.tcp.connection;
 
 import java.net.InetAddress;
 import java.net.UnknownHostException;
@@ -8,7 +8,6 @@ import java.util.List;
 import jpcap.JpcapFilter;
 import jpcap.JpcapFilter.Protocol;
 
-import com.mexhee.tcp.connection.ConnectionDetail;
 
 /**
  * This class is used to do the filtering of tcp connection
@@ -158,7 +157,7 @@ public class ConnectionFilter {
 	 *            the connection detail
 	 * @return whether the give connection pass the filtering
 	 */
-	protected boolean isAcceptable(ConnectionDetail connectionDetail) {
+	public boolean isAcceptable(ConnectionDetail connectionDetail) {
 		if (filters.isEmpty()) {
 			return true;
 		}

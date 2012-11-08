@@ -150,6 +150,7 @@ public class DynamicByteArrayInputStream extends TimeMeasurableCombinedInputStre
 	 * 
 	 * @return boolean
 	 */
+	@Override
 	public synchronized boolean isFinished() {
 		return this.isFinished;
 	}

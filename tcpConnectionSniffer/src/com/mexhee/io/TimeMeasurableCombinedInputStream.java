@@ -33,11 +33,16 @@ public abstract class TimeMeasurableCombinedInputStream extends InputStream {
 	public abstract void assertNewInputStream();
 
 	/**
-	 * have a look whether there are more input stream in current object.
+	 * have a look whether there are more input stream in current buffer.
 	 * 
 	 * @return boolean
 	 */
 	public abstract boolean hasMoreInputStream();
+	
+	/**
+	 * 
+	 */
+	public abstract boolean isFinished();
 
 	/**
 	 * mark finish current stream and skip all the left data in current stream
@@ -61,5 +66,4 @@ public abstract class TimeMeasurableCombinedInputStream extends InputStream {
 	 */
 
 	public abstract Date getCurrentInputStreamEndTime();
-
 }

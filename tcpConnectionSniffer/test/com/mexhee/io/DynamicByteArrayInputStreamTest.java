@@ -124,7 +124,19 @@ public class DynamicByteArrayInputStreamTest {
 		stream.closeWholeStream();
 		Assert.assertEquals("HelloWorld!!\nnew content", sb.toString());
 	}
-
+	
+	@Test
+	public void testBlockingConfigure() throws Exception{
+		DynamicByteArrayInputStream stream = createInputStreamWithoutFinishedFlag();
+		while (stream.hasMoreInputStream()) {
+			printContent(null, stream);
+			stream.finishCurrentInputStream();
+		}
+		//if not blocking, this test thread won't be blocked by stream.read(), otherwise it will be blocked
+		stream.configureBlocking(false);
+		stream.read();
+	}
+	
 	private void printContent(String content, TimeMeasurableCombinedInputStream stream) throws IOException {
 		byte[] buf = new byte[100];
 		int len = stream.read(buf);

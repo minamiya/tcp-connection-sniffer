@@ -4,7 +4,6 @@ import java.util.Collection;
 
 import org.apache.log4j.Logger;
 
-import com.mexhee.tcp.connection.listener.TCPConnectionStateListener;
 
 /**
  * A daemon thread, used to clean timeout/(long time no active packets)
@@ -14,7 +13,6 @@ public class ObsoleteConnectionCleaner implements Runnable {
 
 	private static final Logger logger = Logger.getLogger(ObsoleteConnectionCleaner.class);
 	private PacketReceiverImpl receiver;
-	private TCPConnectionStateListener stateListener;
 
 	/**
 	 * connection timeout in millisecond unit
@@ -31,7 +29,7 @@ public class ObsoleteConnectionCleaner implements Runnable {
 	 * when tcp connection sniffer detected that current connection may be
 	 * broken
 	 * 
-	 * @see TCPConnection#isMaybeBroken()
+	 * @see TCPConnectionImpl#isMaybeBroken()
 	 */
 	public static final int BROKEN_TIMEOUT = 20 * 1000;
 
@@ -43,16 +41,15 @@ public class ObsoleteConnectionCleaner implements Runnable {
 	 */
 	public static final int HALF_HANDSHAKE_TIMEOUT = 10 * 1000;
 
-	public ObsoleteConnectionCleaner(PacketReceiverImpl receiver, TCPConnectionStateListener stateListener) {
+	public ObsoleteConnectionCleaner(PacketReceiverImpl receiver) {
 		this.receiver = receiver;
-		this.stateListener = stateListener;
 	}
 
 	@Override
 	public void run() {
 		while (true) {
 			try {
-				for (TCPConnection connection : receiver.getActiveConnections()) {
+				for (TCPConnectionImpl connection : receiver.getActiveConnections()) {
 					long duration = System.currentTimeMillis() - connection.getLastUpdated().getTime();
 					if (connection.isMaybeBroken() && duration >= BROKEN_TIMEOUT) {
 						connectionTimeout(connection);
@@ -66,7 +63,7 @@ public class ObsoleteConnectionCleaner implements Runnable {
 					}
 				}
 				if (logger.isInfoEnabled()) {
-					Collection<TCPConnection> connections = receiver.getActiveConnections();
+					Collection<TCPConnectionImpl> connections = receiver.getActiveConnections();
 					logger.info("Active tcp connection count:" + connections.size() + ", streaming connection count:"
 							+ getStreamingConnectionCount(connections));
 				}
@@ -77,8 +74,7 @@ public class ObsoleteConnectionCleaner implements Runnable {
 		}
 	}
 
-	private void connectionTimeout(TCPConnection connection) {
-		stateListener.onTimeoutDetected(connection);
+	private void connectionTimeout(TCPConnectionImpl connection) {
 		if (logger.isInfoEnabled() && connection.getState().isEqualsGreaterThan(TCPConnectionState.Established))
 			logger.info(connection.toString() + " has been timeout");
 	}
@@ -87,9 +83,9 @@ public class ObsoleteConnectionCleaner implements Runnable {
 	 * return the tcp connection count, who is still reading client or server
 	 * stream
 	 */
-	private int getStreamingConnectionCount(Collection<TCPConnection> connections) {
+	private int getStreamingConnectionCount(Collection<TCPConnectionImpl> connections) {
 		int count = 0;
-		for (TCPConnection connection : connections) {
+		for (TCPConnectionImpl connection : connections) {
 			if (!connection.isFinished()) {
 				count++;
 			}
