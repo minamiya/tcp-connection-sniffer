@@ -3,6 +3,8 @@ package com.mexhee.tcp.connection;
 import java.io.File;
 import java.io.IOException;
 
+import jpcap.JpcapCaptor;
+
 import org.junit.Test;
 
 import com.mexhee.tcp.connection.TCPConnection;
@@ -15,10 +17,31 @@ public class ServerTest {
 	}
 
 	@Test
-	public void test() throws IOException, InterruptedException {
+	public void testOpenFile() throws IOException, InterruptedException {
 		String filename = getFullFilename("192.168.1.101(17931)-192.168.1.1(80)_1352020113101.pcap");
 		final Server server = Server.openFile(filename);
 		final TCPConnection connection = server.accept();
+		outputConnection(connection);
+		Thread.sleep(2000);
+		server.shutdown();
+	}
+
+	@Test
+	public void testBind() throws IOException, InterruptedException {
+		final Server server = Server.bind(JpcapCaptor.getDeviceList()[4]);
+		int i = 0;
+		while (true) {
+			final TCPConnection connection = server.accept();
+			outputConnection(connection);
+			if (i++ > 200) {
+				break;
+			}
+		}
+		Thread.sleep(200000);
+		server.shutdown();
+	}
+
+	private void outputConnection(final TCPConnection connection) {
 		Thread t = new Thread(new Runnable() {
 			@Override
 			public void run() {
@@ -44,11 +67,9 @@ public class ServerTest {
 					e.printStackTrace();
 				}
 				System.out.println("done");
-				server.shutdown();
 			}
 		});
 		t.setName("outputer");
 		t.start();
-		Thread.sleep(2000);
 	}
 }

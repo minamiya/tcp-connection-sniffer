@@ -77,6 +77,7 @@ public class ObsoleteConnectionCleaner implements Runnable {
 	private void connectionTimeout(TCPConnectionImpl connection) {
 		if (logger.isInfoEnabled() && connection.getState().isEqualsGreaterThan(TCPConnectionState.Established))
 			logger.info(connection.toString() + " has been timeout");
+		receiver.getActiveConnections().remove(connection);
 	}
 
 	/**

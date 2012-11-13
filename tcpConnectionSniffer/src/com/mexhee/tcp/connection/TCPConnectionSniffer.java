@@ -32,11 +32,17 @@ public class TCPConnectionSniffer {
 	 *            which network interface the data sniffer bases on, use
 	 *            {@link #allInterfaces()} to list existing network interfaces
 	 *            in this computer
+	 * @param filter
+	 *            filter to filter connection
 	 * @throws IOException
 	 *             open network interface failed or set filter failed
 	 */
-	public void startup(NetworkInterface networkInterface) throws IOException {
+	public void startup(NetworkInterface networkInterface, ConnectionFilter filter) throws IOException {
 		captor = JpcapCaptor.openDevice(networkInterface, 2000, false, 10000);
+		captor.setFilter("tcp", true);
+		if (filter != null) {
+			this.connectionFilter = filter;
+		}
 		startupInNewThread();
 	}
 
@@ -70,6 +76,11 @@ public class TCPConnectionSniffer {
 	}
 
 	private void startup() {
+		Thread cleaner = new Thread(new ObsoleteConnectionCleaner(picker));
+		cleaner.setDaemon(true);
+		cleaner.setName("ObsoleteConnectionCleaner");
+		cleaner.start();
+		logger.info("started timeout tcp connection cleaner");
 		logger.info("starting up tcp connection sniffer");
 		captor.loopPacket(0, new jpcap.PacketReceiver() {
 			public void receivePacket(Packet packet) {
@@ -82,11 +93,6 @@ public class TCPConnectionSniffer {
 				}
 			}
 		});
-		Thread cleaner = new Thread(new ObsoleteConnectionCleaner(picker));
-		cleaner.setDaemon(true);
-		cleaner.setName("ObsoleteConnectionCleaner");
-		// cleaner.start();
-		logger.info("started timeout tcp connection cleaner");
 	}
 
 	/**

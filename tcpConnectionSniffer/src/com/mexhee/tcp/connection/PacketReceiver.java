@@ -15,6 +15,7 @@ public interface PacketReceiver {
 	 * 
 	 * @param tcpPacket
 	 *            detected tcp packet instance
+	 * @throws PacketsBufferFullException 
 	 */
-	void pick(TCPPacket tcpPacket) throws IOException;
+	void pick(TCPPacket tcpPacket) throws IOException, PacketsBufferFullException;
 }

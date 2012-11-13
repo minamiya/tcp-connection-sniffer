@@ -6,7 +6,6 @@ import java.io.IOException;
 import jpcap.JpcapCaptor;
 
 import org.junit.BeforeClass;
-import org.junit.Test;
 
 import com.mexhee.tcp.connection.ConnectionFilter;
 

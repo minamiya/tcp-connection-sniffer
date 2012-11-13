@@ -45,9 +45,11 @@ public class PacketReceiverImpl implements PacketReceiver {
 	 * 3. according to different types of tcp packet, pass the found tcp connection instance to process this tcp packet
 	 * 4. consolidate those packets, if in a incorrect sequence, put them into buffer, and when correct packets arrives, pass to tcp connection with the buffered packets
 	 * </pre>
+	 * 
+	 * @throws PacketsBufferFullException
 	 */
 	@Override
-	public void pick(TCPPacket tcpPacket) throws IOException {
+	public void pick(TCPPacket tcpPacket) throws IOException, PacketsBufferFullException {
 		if (tcpPacket.isHandsShake1Packet()) {
 			if (logger.isDebugEnabled())
 				logger.debug("hands shake 1 packet");
@@ -105,9 +107,13 @@ public class PacketReceiverImpl implements PacketReceiver {
 			}
 			tryToProcessPacketsInBuffer(connection);
 		}
+
+		if (connection.isFinished()) {
+			activeConnections.remove(connection.getConnectionDetail());
+		}
 	}
 
-	private void handleHalfWayConnectionPackets(TCPPacket tcpPacket) throws IOException {
+	private void handleHalfWayConnectionPackets(TCPPacket tcpPacket) throws IOException, PacketsBufferFullException {
 		if (!tcpPacket.isContainsData()) {
 			return;
 		}
@@ -212,8 +218,8 @@ public class PacketReceiverImpl implements PacketReceiver {
 	public Collection<TCPConnectionImpl> getActiveConnections() {
 		return activeConnections.values();
 	}
-	
-	private void establishedNewConnection(TCPConnection connection){
+
+	private void establishedNewConnection(TCPConnection connection) {
 		establishedConnections.add(connection);
 		synchronized (this) {
 			this.notify();

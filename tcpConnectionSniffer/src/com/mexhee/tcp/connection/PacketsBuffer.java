@@ -21,15 +21,23 @@ public class PacketsBuffer {
 
 	private TCPConnectionImpl connection;
 
+	private static final int MAX_PACKETS_IN_BUFFER = 200;
+
 	public PacketsBuffer(TCPConnectionImpl connection) {
 		this.connection = connection;
 	}
 
-	void addToCSTemporaryStoredDataPackets(TCPPacket packet) {
+	protected void addToCSTemporaryStoredDataPackets(TCPPacket packet) throws PacketsBufferFullException {
+		if (csTemporaryStoredPackets.size() >= MAX_PACKETS_IN_BUFFER) {
+			throw new PacketsBufferFullException();
+		}
 		csTemporaryStoredPackets.add(packet);
 	}
 
-	void addToSCTemporaryStoredDataPackets(TCPPacket packet) {
+	protected void addToSCTemporaryStoredDataPackets(TCPPacket packet) throws PacketsBufferFullException {
+		if (scTemporaryStoredPackets.size() >= MAX_PACKETS_IN_BUFFER) {
+			throw new PacketsBufferFullException();
+		}
 		scTemporaryStoredPackets.add(packet);
 	}
 
